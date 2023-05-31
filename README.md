@@ -22,7 +22,7 @@ See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT),
 [LICENSE-documentation](LICENSE-documentation), and 
 [COPYRIGHT](COPYRIGHT) for details.
 
-You can also read more under the Foundation's [intellectual property policy](ip-policy).
+You can also read more under the Foundation's [intellectual property policy][ip-policy].
 
 ## Trademark
 
