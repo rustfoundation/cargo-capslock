@@ -24,20 +24,12 @@ See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT),
 
 You can also read more under the Foundation's [intellectual property policy][ip-policy].
 
-## Trademark
-
-[The Rust Foundation][rust-foundation] owns and protects the Rust and Cargo
-trademarks and logos (the "Rust Trademarks").
-
-If you want to use these names or brands, please read the
-[media guide][media-guide].
-
 ## Other Policies
 
 You can read about other Rust Fondation policies in the footer of the Foundation [website][foundation-website].
 
 [rust-foundation]: https://foundation.rust-lang.org/
-[media-guide]: https://foundation.rust-lang.org/policies/logo-policy-and-media-guide/
+[media-guide and trademark]: https://foundation.rust-lang.org/policies/logo-policy-and-media-guide/
 [ip-policy]: https://foundation.rust-lang.org/policies/intellectual-property-policy/
 [foundation-website]: https://foundation.rust-lang.org
 [code-of-conduct]: https://foundation.rust-lang.org/policies/code-of-conduct/
