@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["capslock"]
+
+[package]
+name = "cargo-capslock"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+capslock = { version = "0.1.0", path = "capslock" }
+clap = { version = "4.5.53", features = ["derive"] }
+escargot = "0.5.15"
+itertools = "0.14.0"
+llvm-ir-analysis = { git = "https://github.com/LawnGnome/llvm-ir-analysis.git", rev = "aabfd1c", version = "0.4.0", features = [
+    "llvm-19",
+    "strict-versioning",
+] }
+ouroboros = "0.18.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+symbolic = { version = "12.17.0", default-features = false, features = ["demangle"] }
+tempfile = "3.23.0"
+thiserror = "2.0.17"
+walkdir = "2.5.0"
