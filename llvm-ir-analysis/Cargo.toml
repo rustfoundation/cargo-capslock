@@ -16,7 +16,9 @@ license = "MIT"
 either = "1.10"
 llvm-ir = "0.11.0"
 log = "0.4"
-petgraph = { version = "0.6.0", default-features = false, features = ["graphmap"] }
+petgraph = { version = "0.6.0", default-features = false, features = [
+    "graphmap",
+] }
 
 [dev-dependencies]
 env_logger = "0.11"
@@ -79,3 +81,8 @@ llvm-20-or-lower = []
 [package.metadata.docs.rs]
 # Generate docs.rs documentation with the llvm-10 feature
 features = ["llvm-10"]
+
+# Since we're compiling this right now as part of the workspace, quiet things
+# down.
+[lints.rust]
+mismatched_lifetime_syntaxes = "allow"
