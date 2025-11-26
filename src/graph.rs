@@ -85,3 +85,64 @@ impl From<CallGraph> for Vec<Edge> {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use capslock::Capability;
+
+    use crate::function::ToFunction;
+
+    use super::*;
+
+    struct TestFunction(&'static str);
+
+    impl ToFunction for TestFunction {
+        fn debugloc(&self) -> Option<&llvm_ir_analysis::llvm_ir::DebugLoc> {
+            None
+        }
+
+        fn mangled_name(&self) -> &str {
+            self.0
+        }
+    }
+
+    #[test]
+    fn bubble() -> anyhow::Result<()> {
+        let mut functions = FunctionMap::default();
+        let mut graph = CallGraph::default();
+
+        // Let's set up a graph that looks like this:
+        //
+        //     a
+        //    / \
+        //   b   c
+        //  /     \
+        // d       e
+        //
+        // Then we're going to give `d` a direct capability and ensure it bubbles up as a transitive
+        // capability to `a` and `b`, but not to `c` or `e`.
+        let a = functions.upsert("a", TestFunction("a").to_function()?);
+        let b = functions.upsert("b", TestFunction("b").to_function()?);
+        let c = functions.upsert("c", TestFunction("c").to_function()?);
+        let d = functions.upsert(
+            "d",
+            TestFunction("d").to_function_with_caps(
+                [(Capability::ArbitraryExecution, CapabilityType::Direct)].into_iter(),
+            )?,
+        );
+        let e = functions.upsert("e", TestFunction("e").to_function()?);
+
+        graph.add_edge(a, b, None);
+        graph.add_edge(b, d, None);
+        graph.add_edge(a, c, None);
+        graph.add_edge(c, e, None);
+
+        graph.bubble_transitive_capabilities(&mut functions);
+
+        insta::with_settings!({ sort_maps => true }, {
+            insta::assert_yaml_snapshot!(functions);
+        });
+
+        Ok(())
+    }
+}

@@ -5,7 +5,6 @@ use capslock::{
     report::{self, FunctionName, RustFunctionName},
 };
 use llvm_ir_analysis::llvm_ir::{self, DebugLoc};
-use serde::Serialize;
 use symbolic::{
     common::{Language, Name, NameMangling},
     demangle::{Demangle, DemangleOptions},
@@ -14,11 +13,10 @@ use thiserror::Error;
 
 use crate::{caps::FunctionCaps, location::IntoOptionLocation};
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct FunctionMap {
-    #[serde(flatten)]
     functions: Vec<report::Function>,
-    #[serde(skip)]
     ids: HashMap<String, usize>,
 }
 
@@ -212,5 +210,27 @@ fn direct_fn_caps(
             .collect()
     } else {
         BTreeMap::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rust_demangling() -> anyhow::Result<()> {
+        use super::parse_rust_function_name as parse;
+
+        use insta::assert_compact_debug_snapshot as snapshot;
+
+        // Success cases.
+        snapshot!(parse("no_mangle")?, @r#"Bare { function: "no_mangle" }"#);
+        snapshot!(parse("foo::bar")?, @r#"StructMethod { type_: "foo", method: "bar" }"#);
+        snapshot!(parse("<axum::extract::path::Path<T> as axum_core::extract::FromRequestParts<S>>::from_request_parts")?, @r#"TraitMethod { trait_: "axum_core::extract::FromRequestParts<S>", type_: "axum::extract::path::Path<T>", method: "from_request_parts" }"#);
+        snapshot!(parse("tower::util::map_err::_::<impl tower::util::map_err::MapErrFuture<F,N>>::project")?, @r#"StructMethod { type_: "tower::util::map_err::_::<impl tower::util::map_err::MapErrFuture<F,N>>", method: "project" }"#);
+
+        // Failure cases.
+        snapshot!(parse("<foo as bar"), @r#"Err(MalformedTraitMethod("foo as bar"))"#);
+        snapshot!(parse("<foo>"), @r#"Err(MalformedMethod("foo>"))"#);
+
+        Ok(())
     }
 }

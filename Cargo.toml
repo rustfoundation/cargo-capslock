@@ -17,6 +17,7 @@ capslock-cm = { version = "0.1.0", path = "capslock-cm" }
 capslock-rust = { version = "0.1.0", path = "capslock-rust" }
 clap = "4.5.53"
 escargot = "0.5.15"
+insta = "1.44.1"
 itertools = "0.14.0"
 llvm-ir-analysis = { path = "llvm-ir-analysis" }
 nix = "0.30.1"
@@ -69,3 +70,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "time"] }
 unwind = { workspace = true, features = ["ptrace"] }
 walkdir = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true, features = ["serde", "yaml"] }
