@@ -1,13 +1,10 @@
-use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::FmtSpan, time::uptime},
 };
 
-use crate::{caps::FunctionCaps, syscall::lookup as lookup_syscall};
-
+use crate::{syscall::lookup as lookup_syscall};
 mod caps;
 mod dynamic;
 mod function;
@@ -18,9 +15,6 @@ mod syscall;
 
 #[derive(Parser)]
 pub struct Opt {
-    #[arg(long)]
-    function_caps: PathBuf,
-
     #[command(subcommand)]
     command: Command,
 }
@@ -34,10 +28,8 @@ impl Opt {
             .with_writer(std::io::stderr)
             .init();
 
-        let function_caps = FunctionCaps::from_path(self.function_caps)?;
-
         match self.command {
-            Command::Static(cmd) => cmd.main(function_caps),
+            Command::Static(cmd) => cmd.main(),
             Command::Dynamic(cmd) => cmd.main(),
         }
     }

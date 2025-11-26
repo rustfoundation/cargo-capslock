@@ -28,6 +28,10 @@ pub struct Static {
     #[arg(long)]
     bin: Option<OsString>,
 
+    /// Path to the function capability mapping.
+    #[arg(long)]
+    function_caps: PathBuf,
+
     /// Package to build.
     #[arg(short, long)]
     package: Option<OsString>,
@@ -52,8 +56,10 @@ pub struct Static {
 }
 
 impl Static {
-    #[tracing::instrument(skip(function_caps), err)]
-    pub fn main(self, function_caps: FunctionCaps) -> anyhow::Result<()> {
+    #[tracing::instrument(err)]
+    pub fn main(self) -> anyhow::Result<()> {
+        let function_caps = FunctionCaps::from_path(&self.function_caps)?;
+
         // Set up a temporary target directory so that we don't have to worry about
         // cross-contamination, and we know exactly which `.bc` files are relevant.
         let target = TempDir::new()?;
