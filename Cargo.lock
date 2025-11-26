@@ -1478,33 +1478,22 @@ dependencies = [
 [[package]]
 name = "ptrace-iterator"
 version = "0.1.0"
-source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=b0699344220335859391bbeb97cd301740dc97fb#b0699344220335859391bbeb97cd301740dc97fb"
+source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=10c7d34#10c7d34aefd8fce76ba6e6ec2161407b62946179"
 dependencies = [
  "linux-aio-sys",
  "linux-raw-sys 0.12.0",
  "nix",
+ "ptrace-iterator-attr-macro",
  "ptrace-iterator-core",
- "ptrace-iterator-derive",
  "syscalls",
  "thiserror 2.0.17",
  "tracing",
 ]
 
 [[package]]
-name = "ptrace-iterator-core"
+name = "ptrace-iterator-attr-macro"
 version = "0.1.0"
-source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=b0699344220335859391bbeb97cd301740dc97fb#b0699344220335859391bbeb97cd301740dc97fb"
-dependencies = [
- "linux-raw-sys 0.12.0",
- "nix",
- "syscalls",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "ptrace-iterator-derive"
-version = "0.1.0"
-source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=b0699344220335859391bbeb97cd301740dc97fb#b0699344220335859391bbeb97cd301740dc97fb"
+source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=10c7d34#10c7d34aefd8fce76ba6e6ec2161407b62946179"
 dependencies = [
  "darling",
  "itertools",
@@ -1513,6 +1502,17 @@ dependencies = [
  "ptrace-iterator-core",
  "quote 1.0.42",
  "syn 2.0.111",
+]
+
+[[package]]
+name = "ptrace-iterator-core"
+version = "0.1.0"
+source = "git+ssh://git@github.com/LawnGnome/ptrace-iterator.git?rev=10c7d34#10c7d34aefd8fce76ba6e6ec2161407b62946179"
+dependencies = [
+ "linux-raw-sys 0.12.0",
+ "nix",
+ "syscalls",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
