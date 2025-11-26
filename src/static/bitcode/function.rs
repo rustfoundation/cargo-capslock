@@ -12,7 +12,7 @@ use symbolic::{
 };
 use thiserror::Error;
 
-use crate::{bitcode::location::IntoOptionLocation, caps::FunctionCaps};
+use crate::{caps::FunctionCaps, r#static::bitcode::location::IntoOptionLocation};
 
 #[derive(Default, Debug, Serialize)]
 pub struct FunctionMap {

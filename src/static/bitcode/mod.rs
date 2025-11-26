@@ -9,8 +9,8 @@ use ouroboros::self_referencing;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::{
-    bitcode::{function::FunctionMap, location::IntoOptionLocation},
     caps::FunctionCaps,
+    r#static::bitcode::{function::FunctionMap, location::IntoOptionLocation},
 };
 
 mod function;
