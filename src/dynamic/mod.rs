@@ -55,6 +55,7 @@ impl Dynamic {
         };
         let mut process_state = ProcessState::default();
 
+        let mut address_spaces = HashMap::new();
         let mut tracer = Tracer::new(child)?;
         for event_result in tracer.by_ref() {
             let event = match event_result {
@@ -85,8 +86,10 @@ impl Dynamic {
                 process_state.caps.extend(syscall_caps.iter().copied());
 
                 let state = PTraceState::new(pid.as_raw() as u32)?;
-                let address_space = AddressSpace::new(Accessors::ptrace(), Byteorder::DEFAULT)?;
-                let Ok(mut cursor) = Cursor::remote(&address_space, &state) else {
+                let address_space = address_spaces.entry(pid).or_insert_with(|| {
+                    AddressSpace::new(Accessors::ptrace(), Byteorder::DEFAULT).unwrap()
+                });
+                let Ok(mut cursor) = Cursor::remote(address_space, &state) else {
                     continue;
                 };
 
