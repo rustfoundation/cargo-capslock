@@ -72,8 +72,8 @@ impl Dynamic {
         let mut address_spaces = HashMap::new();
 
         // Actually start tracing the child.
-        let mut tracer = Tracer::new(child)?;
-        for event_result in tracer.by_ref() {
+        let mut tracer = Tracer::<()>::new(child)?;
+        for event_result in tracer.iter() {
             let event = match event_result {
                 Ok(event) => event,
                 Err(e) => {
