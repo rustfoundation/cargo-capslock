@@ -1,27 +1,29 @@
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs::File,
     io::Write,
-    os::unix::ffi::OsStrExt,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
 };
 
 use capslock::{
     Capability, CapabilityType,
-    report::{self, Location},
+    report::{self},
 };
 use clap::Parser;
-use ptrace_iterator::{CommandTrace, Piddable, Tracer, event::Event, nix::unistd::Pid};
-use symbolic::{common::Name, debuginfo::Object};
+use ptrace_iterator::{CommandTrace, Tracer, event::Event};
+use symbolic::common::Name;
 use unwind::{Accessors, AddressSpace, Byteorder, Cursor, PTraceState, RegNum};
 
 use crate::{
-    caps::FunctionCaps,
+    dynamic::signal::SignalForwarder,
     function::{FunctionMap, ToFunction},
     graph::CallGraph,
 };
+
+mod location;
+mod signal;
 
 #[derive(Parser, Debug)]
 pub struct Dynamic {
@@ -38,24 +40,38 @@ pub struct Dynamic {
 impl Dynamic {
     #[tracing::instrument(err)]
     pub fn main(self) -> anyhow::Result<()> {
+        // Wrangle argv and extract the command path.
         let mut argv = self.argv.into_iter().collect::<VecDeque<_>>();
         let path = argv
             .pop_front()
             .ok_or_else(|| anyhow::anyhow!("cannot get argv[0]"))?;
 
+        // Spawn the command we're going to trace.
         let mut cmd = Command::new(&path);
         cmd.args(argv).traceme();
         let child = cmd.spawn()?;
 
-        let empty_caps = FunctionCaps::default();
+        // Set up signal handling to pass signals on to the child.
+        let signal_forwarder = SignalForwarder::spawn(child.id())?;
+
+        // Set up our location lookup service based on the command line flags.
         let mut location_lookup = if self.lookup_locations {
-            LocationLookup::enabled()
+            location::Lookup::enabled()
         } else {
-            LocationLookup::disabled()
+            location::Lookup::disabled()
         };
+
+        // Initialise the process state. For now we'll lump all the descendant processes into one
+        // state structure, but if we ever wanted to split them out for more fine-grained reporting,
+        // that wouldn't be difficult.
         let mut process_state = ProcessState::default();
 
+        // To take advantage of libunwind caching, we'll only construct one address space per
+        // spawned process. We'll add these lazily, though, so we don't have to track clones
+        // explicitly.
         let mut address_spaces = HashMap::new();
+
+        // Actually start tracing the child.
         let mut tracer = Tracer::new(child)?;
         for event_result in tracer.by_ref() {
             let event = match event_result {
@@ -66,6 +82,12 @@ impl Dynamic {
                 }
             };
 
+            // We're only interested in syscall exits right now, since we can check if there's an
+            // error.
+            //
+            // If and when there's more fine-grained introspection into syscalls (for example, to
+            // ascertain what an `ioctl` syscall is actually doing), then we'll likely also need to
+            // track entries so we can examine arguments. But this is sufficient for now.
             if let Event::SyscallExit(event) = &event
                 && !event.is_error()
             {
@@ -85,6 +107,7 @@ impl Dynamic {
                 };
                 process_state.caps.extend(syscall_caps.iter().copied());
 
+                // Configure libunwind to use ptrace to access the child's memory space.
                 let state = PTraceState::new(pid.as_raw() as u32)?;
                 let address_space = address_spaces.entry(pid).or_insert_with(|| {
                     AddressSpace::new(Accessors::ptrace(), Byteorder::DEFAULT).unwrap()
@@ -93,16 +116,22 @@ impl Dynamic {
                     continue;
                 };
 
+                // Now we iterate over the call stack. Note that we have to track the previous child
+                // function as well to build the call graph.
                 let mut child_idx = None;
                 loop {
                     let Ok(ip) = cursor.register(RegNum::IP) else {
                         break;
                     };
 
+                    // We're only interested in stack frames that have symbol names.
                     if let Ok(name) = cursor.procedure_name()
                         && let Ok(info) = cursor.procedure_info()
                         && ip == info.start_ip() + name.offset()
                     {
+                        // If this is the first named stack frame we've seen, then we'll consider
+                        // any capabilities here to be direct. Anything higher in the stack will be
+                        // considered transitive.
                         let ty = if child_idx.is_none() {
                             CapabilityType::Direct
                         } else {
@@ -110,22 +139,33 @@ impl Dynamic {
                         };
 
                         let name = Name::from(name.name());
-                        let mut func = name.to_function(&empty_caps)?;
-                        for cap in syscall_caps.iter() {
-                            func.insert_capability(*cap, ty);
+                        match name.to_function_with_caps(syscall_caps.iter().map(|cap| (*cap, ty)))
+                        {
+                            Ok(mut func) => {
+                                // Do the location lookup, bearing in mind that it might be a no-op
+                                // if this is disabled.
+                                func.location = location_lookup.lookup(pid, name.as_str()).cloned();
+
+                                // Ensure the function is known and get its index for the call
+                                // graph.
+                                let func_idx = process_state.functions.upsert(name.as_str(), func);
+
+                                // Actually update the call graph as long as this isn't the first
+                                // frame.
+                                if let Some(child_idx) = child_idx {
+                                    process_state.call_graph.add_edge(func_idx, child_idx, None);
+                                }
+
+                                // Update the last frame we saw.
+                                child_idx = Some(func_idx);
+                            }
+                            Err(e) => {
+                                tracing::error!(%e, ?name, "error parsing function name");
+                            }
                         }
-
-                        func.location = location_lookup.lookup(pid, name.as_str()).cloned();
-
-                        let func_idx = process_state.functions.upsert(name.as_str(), func);
-
-                        if let Some(child_idx) = child_idx {
-                            process_state.call_graph.add_edge(func_idx, child_idx, None);
-                        }
-
-                        child_idx = Some(func_idx);
                     }
 
+                    // On to the next stack frame!
                     match cursor.step() {
                         Ok(true) => continue,
                         Ok(false) | Err(_) => break,
@@ -134,6 +174,10 @@ impl Dynamic {
             }
         }
 
+        // Stop forwarding signals, since there's no longer a child process.
+        drop(signal_forwarder);
+
+        // Output the Capslock JSON.
         let mut writer: Box<dyn Write> = if let Some(output) = self.output {
             eprintln!("Writing capslock JSON to {}", output.display());
             Box::new(File::create(output)?)
@@ -142,6 +186,7 @@ impl Dynamic {
         };
         serde_json::to_writer_pretty(&mut writer, &process_state.into_report(path))?;
 
+        // Do our best to forward on the child's exit status.
         if let Some(status) = tracer.status()
             && let Some(code) = status.code()
         {
@@ -149,94 +194,6 @@ impl Dynamic {
         } else {
             Ok(())
         }
-    }
-}
-
-struct LocationLookup {
-    processes: Option<HashMap<Pid, Option<ProcessLookup>>>,
-}
-
-impl LocationLookup {
-    pub fn disabled() -> Self {
-        Self { processes: None }
-    }
-
-    pub fn enabled() -> Self {
-        Self {
-            processes: Some(HashMap::new()),
-        }
-    }
-
-    pub fn lookup(&mut self, pid: impl Piddable, mangled: &str) -> Option<&Location> {
-        if let Some(proc) = self.process(pid) {
-            proc.lookup(mangled)
-        } else {
-            None
-        }
-    }
-
-    fn process(&mut self, pid: impl Piddable) -> Option<&mut ProcessLookup> {
-        if let Some(processes) = &mut self.processes {
-            let pid = pid.into_pid();
-
-            processes
-                .entry(pid)
-                .or_insert_with(|| match ProcessLookup::build(pid) {
-                    Ok(proc) => Some(proc),
-                    Err(e) => {
-                        tracing::warn!(%e, %pid, "error building process lookup struct");
-                        None
-                    }
-                });
-
-            processes.get_mut(&pid).unwrap().as_mut()
-        } else {
-            None
-        }
-    }
-}
-
-struct ProcessLookup {
-    functions: HashMap<String, Location>,
-}
-
-impl ProcessLookup {
-    fn build(pid: Pid) -> anyhow::Result<Self> {
-        let data = std::fs::read(format!("/proc/{pid}/exe"))?;
-        let object = Object::parse(&data)?;
-        let debug = object.debug_session()?;
-
-        let mut functions = HashMap::new();
-
-        for func in debug.functions() {
-            let Ok(func) = func else {
-                continue;
-            };
-
-            if let Some(info) = func.lines.first() {
-                let path =
-                    Path::new(OsStr::from_bytes(func.compilation_dir)).join(info.file.path_str());
-
-                functions.insert(
-                    func.name.to_string(),
-                    Location {
-                        directory: path.parent().map(PathBuf::from),
-                        filename: path
-                            .file_name()
-                            .map(PathBuf::from)
-                            .unwrap_or(PathBuf::from("..")),
-                        line: info.line,
-                        column: None,
-                    },
-                );
-            }
-        }
-
-        Ok(Self { functions })
-    }
-
-    fn lookup(&self, mangled: &str) -> Option<&Location> {
-        self.functions.get(mangled)
     }
 }
 

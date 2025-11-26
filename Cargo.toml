@@ -19,6 +19,7 @@ clap = "4.5.53"
 escargot = "0.5.15"
 itertools = "0.14.0"
 llvm-ir-analysis = { path = "llvm-ir-analysis" }
+nix = "0.30.1"
 ouroboros = "0.18.5"
 petgraph = "0.8.3"
 proc-macro2 = "1.0.103"
@@ -26,6 +27,7 @@ ptrace-iterator = { version = "0.1.0", git = "ssh://git@github.com/LawnGnome/ptr
 quote = "1.0.42"
 serde = "1.0.228"
 serde_json = "1.0.145"
+signal-hook = "0.3.18"
 strum = "0.27.2"
 symbolic = { version = "12.17.0", default-features = false }
 syn = "2.0.111"
@@ -53,11 +55,13 @@ llvm-ir-analysis = { workspace = true, features = [
     "llvm-19",
     "strict-versioning",
 ] }
+nix = { workspace = true, features = ["signal"] }
 ouroboros = { workspace = true }
 petgraph = { workspace = true }
 ptrace-iterator = { workspace = true, features = ["tracing"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+signal-hook = { workspace = true }
 symbolic = { workspace = true, features = ["debuginfo", "demangle"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

@@ -46,7 +46,7 @@ impl FunctionMap {
     ) -> Result<usize, Error> {
         Ok(self.upsert(
             function.mangled_name(),
-            function.to_function(function_caps)?,
+            function.to_function_with_fn_caps(function_caps)?,
         ))
     }
 
@@ -137,7 +137,29 @@ pub trait ToFunction {
     fn debugloc(&self) -> Option<&DebugLoc>;
     fn mangled_name(&self) -> &str;
 
-    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
+    fn to_function(&self) -> Result<report::Function, Error> {
+        Ok(report::Function {
+            name: parse_mangled_name(self.mangled_name())?,
+            location: self.debugloc().into_option_location(),
+            capabilities: BTreeMap::new(),
+        })
+    }
+
+    fn to_function_with_caps(
+        &self,
+        caps: impl Iterator<Item = (Capability, CapabilityType)>,
+    ) -> Result<report::Function, Error> {
+        Ok(report::Function {
+            name: parse_mangled_name(self.mangled_name())?,
+            location: self.debugloc().into_option_location(),
+            capabilities: caps.collect(),
+        })
+    }
+
+    fn to_function_with_fn_caps(
+        &self,
+        function_caps: &FunctionCaps,
+    ) -> Result<report::Function, Error> {
         let name = parse_mangled_name(self.mangled_name())?;
         let capabilities = direct_fn_caps(function_caps, &name);
 
@@ -157,17 +179,6 @@ impl ToFunction for &llvm_ir::Function {
     fn mangled_name(&self) -> &str {
         &self.name
     }
-
-    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
-        let name = parse_mangled_name(&self.name)?;
-        let capabilities = direct_fn_caps(function_caps, &name);
-
-        Ok(report::Function {
-            name,
-            location: self.debugloc.into_option_location(),
-            capabilities,
-        })
-    }
 }
 
 impl ToFunction for &llvm_ir::function::FunctionDeclaration {
@@ -177,17 +188,6 @@ impl ToFunction for &llvm_ir::function::FunctionDeclaration {
 
     fn mangled_name(&self) -> &str {
         &self.name
-    }
-
-    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
-        let name = parse_mangled_name(&self.name)?;
-        let capabilities = direct_fn_caps(function_caps, &name);
-
-        Ok(report::Function {
-            name,
-            location: self.debugloc.into_option_location(),
-            capabilities,
-        })
     }
 }
 
