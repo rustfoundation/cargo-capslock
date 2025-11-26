@@ -6,11 +6,15 @@ use tracing_subscriber::{
     fmt::{format::FmtSpan, time::uptime},
 };
 
-use crate::caps::FunctionCaps;
+use crate::{caps::FunctionCaps, syscall::lookup as lookup_syscall};
 
 mod caps;
 mod dynamic;
+mod function;
+mod graph;
+mod location;
 mod r#static;
+mod syscall;
 
 #[derive(Parser)]
 pub struct Opt {
@@ -34,6 +38,7 @@ impl Opt {
 
         match self.command {
             Command::Static(cmd) => cmd.main(function_caps),
+            Command::Dynamic(cmd) => cmd.main(),
         }
     }
 }
@@ -42,4 +47,10 @@ impl Opt {
 pub enum Command {
     /// Build and statically analyse a Rust project.
     Static(r#static::Static),
+
+    /// Run and analyse a process.
+    ///
+    /// If the process isn't built in Rust, or lacks debuginfo, this probably won't be as effective
+    /// as you might hope.
+    Dynamic(dynamic::Dynamic),
 }

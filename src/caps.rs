@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Debug, fs::File, path::Path};
 use capslock_rust::Function;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct FunctionCaps(HashMap<String, Function>);
 
 impl FunctionCaps {

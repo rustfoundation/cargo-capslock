@@ -12,7 +12,7 @@ use symbolic::{
 };
 use thiserror::Error;
 
-use crate::{caps::FunctionCaps, r#static::bitcode::location::IntoOptionLocation};
+use crate::{caps::FunctionCaps, location::IntoOptionLocation};
 
 #[derive(Default, Debug, Serialize)]
 pub struct FunctionMap {
@@ -39,22 +39,26 @@ impl FunctionMap {
         self.functions
     }
 
-    pub fn upsert(
+    pub fn upsert_with_caps(
         &mut self,
         function_caps: &FunctionCaps,
         function: impl ToFunction,
-    ) -> Result<(), Error> {
-        self.upsert_function(
+    ) -> Result<usize, Error> {
+        Ok(self.upsert(
             function.mangled_name(),
             function.to_function(function_caps)?,
-        );
-        Ok(())
+        ))
     }
 
-    fn upsert_function(&mut self, mangled: &str, function: report::Function) {
-        if !self.ids.contains_key(mangled) {
-            self.ids.insert(mangled.to_string(), self.functions.len());
+    pub fn upsert(&mut self, mangled: &str, function: report::Function) -> usize {
+        if let Some(idx) = self.ids.get(mangled) {
+            *idx
+        } else {
+            let idx = self.functions.len();
+            self.ids.insert(mangled.to_string(), idx);
             self.functions.push(function);
+
+            idx
         }
     }
 }
@@ -184,6 +188,16 @@ impl ToFunction for &llvm_ir::function::FunctionDeclaration {
             location: self.debugloc.into_option_location(),
             capabilities,
         })
+    }
+}
+
+impl<'a> ToFunction for Name<'a> {
+    fn debugloc(&self) -> Option<&DebugLoc> {
+        None
+    }
+
+    fn mangled_name(&self) -> &str {
+        self.as_str()
     }
 }
 
