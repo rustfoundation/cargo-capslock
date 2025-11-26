@@ -21,7 +21,6 @@ use crate::{
     caps::FunctionCaps,
     function::{FunctionMap, ToFunction},
     graph::CallGraph,
-    lookup_syscall,
 };
 
 #[derive(Parser, Debug)]
@@ -76,7 +75,7 @@ impl Dynamic {
 
                 // Even if we can't get a stack trace, let's minimally update the overall set of
                 // capabilities.
-                let syscall_caps = match lookup_syscall(syscall.nr().name()) {
+                let syscall_caps = match crate::syscall::lookup(syscall.nr().name()) {
                     Some(iter) => iter.collect::<BTreeSet<_>>(),
                     None => {
                         tracing::warn!(?syscall, "cannot find syscall in syscall capability map");

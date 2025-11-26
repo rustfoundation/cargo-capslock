@@ -4,7 +4,6 @@ use tracing_subscriber::{
     fmt::{format::FmtSpan, time::uptime},
 };
 
-use crate::{syscall::lookup as lookup_syscall};
 mod caps;
 mod dynamic;
 mod function;
