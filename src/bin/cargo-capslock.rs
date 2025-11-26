@@ -2,11 +2,11 @@ use clap::Parser;
 
 #[derive(Parser)]
 #[clap(bin_name = "cargo")]
-enum Opt {
+enum Command {
     Capslock(cargo_capslock::Opt),
 }
 
 fn main() -> anyhow::Result<()> {
-    let Opt::Capslock(opt) = Opt::parse();
+    let Command::Capslock(opt) = Command::parse();
     opt.main()
 }

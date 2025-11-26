@@ -1,6 +1,6 @@
 [package]
-name = "capslock"
-description = "Common language-independent types for cargo-capslock functionality"
+name = "capslock-rust"
+description = "Rust specific types for cargo-capslock"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,5 +8,5 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+capslock = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-strum = { workspace = true, features = ["derive"] }

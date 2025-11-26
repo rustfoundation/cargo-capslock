@@ -1,21 +1,33 @@
-use std::{fmt::Debug, path::PathBuf};
+use std::{collections::BTreeSet, fmt::Debug, ops::Deref, path::PathBuf};
 
-use capslock::{Edge, Report};
+use capslock::{
+    CapabilityType, Report,
+    report::{Edge, Location},
+};
 use llvm_ir_analysis::{ModuleAnalysis, llvm_ir::Module};
 use ouroboros::self_referencing;
+use petgraph::graphmap::DiGraphMap;
 
-use crate::bitcode::function::FunctionMap;
+use crate::{
+    bitcode::{function::FunctionMap, location::IntoOptionLocation},
+    caps::FunctionCaps,
+};
 
 mod function;
+mod location;
 
 pub struct Bitcode {
     path: PathBuf,
     functions: FunctionMap,
-    edges: Vec<Edge>,
+    call_graph: CallGraph,
 }
 
 impl Bitcode {
-    pub fn from_bc_path(path: impl Into<PathBuf>) -> anyhow::Result<Self> {
+    #[tracing::instrument(skip(function_caps), err)]
+    pub fn from_bc_path(
+        path: impl Into<PathBuf> + Debug,
+        function_caps: &FunctionCaps,
+    ) -> anyhow::Result<Self> {
         let path = path.into();
         let module = Module::from_bc_path(&path).map_err(|s| anyhow::anyhow!("{s}"))?;
 
@@ -26,28 +38,45 @@ impl Bitcode {
         .build();
 
         // We need the function map for everything else to make sense.
-        let functions = build_function_map(&inner)?;
+        let mut functions = build_function_map(&inner, function_caps)?;
 
-        // XXX: we can probably parallelise further analysis.
-        let edges = build_edges(&inner, &functions);
+        // Get the call graph and adapt it for what we need to report later.
+        let call_graph = CallGraph::build(&inner, &functions);
+
+        // Bubble the direct capabilities up as transitive capabilities via the call graph.
+        call_graph.bubble_transitive_capabilities(&mut functions);
 
         // TODO: gather package, module, and build metadata.
-
-        // TODO: match function calls against a known map of function -> capabilities, and then
-        // output a summary of what capabilities are in use.
 
         Ok(Self {
             path,
             functions,
-            edges,
+            call_graph,
         })
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn into_report(self) -> Report {
+        let functions = self.functions.into_functions();
+
+        let capabilities = functions.iter().fold(BTreeSet::new(), |mut acc, func| {
+            acc.extend(func.capabilities.keys().copied());
+            acc
+        });
+
         Report {
             path: self.path,
-            functions: self.functions.into_functions(),
-            edges: self.edges,
+            capabilities,
+            functions,
+            edges: self
+                .call_graph
+                .all_edges()
+                .map(|(caller, callee, location)| Edge {
+                    caller,
+                    callee,
+                    location: location.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -66,36 +95,78 @@ struct Inner {
     analysis: ModuleAnalysis<'this>,
 }
 
-fn build_edges(inner: &Inner, functions: &FunctionMap) -> Vec<Edge> {
-    inner.with_analysis(|analysis| {
-        let mut edges = Vec::new();
-
-        for (caller, callee, ()) in analysis.call_graph().inner().all_edges() {
-            // FIXME: if we extend our llvm-ir fork to also include the Call in the digraph, then we
-            // can get the call location.
-            edges.push(Edge {
-                caller: functions.get_index(caller).unwrap(),
-                callee: functions.get_index(callee).unwrap(),
-                location: None,
-            })
-        }
-
-        edges
-    })
-}
-
-fn build_function_map(inner: &Inner) -> anyhow::Result<FunctionMap> {
+#[tracing::instrument(skip_all, err)]
+fn build_function_map(inner: &Inner, function_caps: &FunctionCaps) -> anyhow::Result<FunctionMap> {
     // TODO: figure out if we need to do anything with ifuncs.
     let module = inner.borrow_module();
     let mut map = FunctionMap::default();
 
     for func in module.functions.iter() {
-        map.upsert_func(func)?;
+        map.upsert(function_caps, func)?;
     }
 
     for func in module.func_declarations.iter() {
-        map.upsert_func_decl(func)?;
+        map.upsert(function_caps, func)?;
     }
 
     Ok(map)
+}
+
+struct CallGraph(DiGraphMap<usize, Option<Location>>);
+
+impl CallGraph {
+    #[tracing::instrument(skip_all)]
+    pub fn build(inner: &Inner, functions: &FunctionMap) -> Self {
+        inner.with_analysis(|analysis| {
+            let call_graph = analysis.call_graph();
+            let inner = call_graph.inner();
+
+            let mut graph = DiGraphMap::with_capacity(inner.node_count(), inner.edge_count());
+
+            for (caller, callee, call) in inner.all_edges() {
+                let caller = functions.get_index(caller).unwrap();
+                let callee = functions.get_index(callee).unwrap();
+                let location = call.debugloc().into_option_location();
+
+                graph.add_edge(caller, callee, location);
+            }
+
+            Self(graph)
+        })
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn bubble_transitive_capabilities(&self, functions: &mut FunctionMap) {
+        // This is about the stupidest possible way to do this, but hey, I have a film degree.
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for (caller, callee, _) in self.0.all_edges() {
+                let callee_caps = functions
+                    .get(callee)
+                    .unwrap()
+                    .capabilities
+                    .keys()
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                let caller = functions.get_mut(caller).unwrap();
+
+                for cap in callee_caps.iter() {
+                    if !caller.capabilities.contains_key(cap) {
+                        caller.capabilities.insert(*cap, CapabilityType::Transitive);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Deref for CallGraph {
+    type Target = DiGraphMap<usize, Option<Location>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }

@@ -1,6 +1,9 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::{BTreeMap, HashMap};
 
-use capslock::{FunctionName, Location, RustFunctionName};
+use capslock::{
+    Capability, CapabilityType,
+    report::{self, FunctionName, RustFunctionName},
+};
 use llvm_ir_analysis::llvm_ir::{self, DebugLoc};
 use serde::Serialize;
 use symbolic::{
@@ -9,65 +12,51 @@ use symbolic::{
 };
 use thiserror::Error;
 
+use crate::{bitcode::location::IntoOptionLocation, caps::FunctionCaps};
+
 #[derive(Default, Debug, Serialize)]
 pub struct FunctionMap {
     #[serde(flatten)]
-    functions: Vec<capslock::Function>,
+    functions: Vec<report::Function>,
     #[serde(skip)]
     ids: HashMap<String, usize>,
 }
 
 impl FunctionMap {
+    pub fn get(&self, idx: usize) -> Option<&report::Function> {
+        self.functions.get(idx)
+    }
+
     pub fn get_index(&self, mangled: &str) -> Option<usize> {
         self.ids.get(mangled).copied()
     }
 
-    pub fn into_functions(self) -> Vec<capslock::Function> {
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut report::Function> {
+        self.functions.get_mut(idx)
+    }
+
+    pub fn into_functions(self) -> Vec<report::Function> {
         self.functions
     }
 
-    pub fn upsert_func(&mut self, func: &llvm_ir::Function) -> Result<(), Error> {
-        self.upsert_function(
-            &func.name,
-            capslock::Function {
-                name: parse_mangled_name(&func.name)?,
-                location: convert_debugloc(&func.debugloc),
-            },
-        );
-
-        Ok(())
-    }
-
-    pub fn upsert_func_decl(
+    pub fn upsert(
         &mut self,
-        func: &llvm_ir::function::FunctionDeclaration,
+        function_caps: &FunctionCaps,
+        function: impl ToFunction,
     ) -> Result<(), Error> {
         self.upsert_function(
-            &func.name,
-            capslock::Function {
-                name: parse_mangled_name(&func.name)?,
-                location: convert_debugloc(&func.debugloc),
-            },
+            function.mangled_name(),
+            function.to_function(function_caps)?,
         );
-
         Ok(())
     }
 
-    fn upsert_function(&mut self, mangled: &str, function: capslock::Function) {
+    fn upsert_function(&mut self, mangled: &str, function: report::Function) {
         if !self.ids.contains_key(mangled) {
             self.ids.insert(mangled.to_string(), self.functions.len());
             self.functions.push(function);
         }
     }
-}
-
-fn convert_debugloc(loc: &Option<DebugLoc>) -> Option<Location> {
-    loc.as_ref().map(|loc| Location {
-        directory: loc.directory.as_ref().map(PathBuf::from),
-        filename: PathBuf::from(&loc.filename),
-        line: loc.line as u64,
-        column: loc.col.map(u64::from),
-    })
 }
 
 fn parse_mangled_name(mangled: &str) -> Result<FunctionName, Error> {
@@ -94,20 +83,29 @@ fn parse_mangled_name(mangled: &str) -> Result<FunctionName, Error> {
 
 fn parse_rust_function_name(function: &str) -> Result<RustFunctionName, Error> {
     if let Some(function) = function.strip_prefix('<') {
-        let (type_, rem) = function
-            .split_once(" as ")
-            .ok_or_else(|| Error::MalformedTrait(function.to_string()))?;
+        if let Some((type_, rem)) = function.split_once(" as ") {
+            let (trait_, method) = rem
+                .rsplit_once(">::")
+                .ok_or_else(|| Error::MalformedTraitMethod(function.to_string()))?;
 
-        let (trait_, method) = rem
-            .rsplit_once(">::")
-            .ok_or_else(|| Error::MalformedTraitMethod(function.to_string()))?;
+            Ok(RustFunctionName::TraitMethod {
+                trait_: trait_.to_string(),
+                type_: type_.to_string(),
+                method: method.to_string(),
+            })
+        } else {
+            let (type_, method) = function
+                .rsplit_once(">::")
+                .ok_or_else(|| Error::MalformedMethod(function.to_string()))?;
 
-        Ok(RustFunctionName::TraitMethod {
-            trait_: trait_.to_string(),
-            type_: type_.to_string(),
-            method: method.to_string(),
-        })
-    } else if let Some((type_, method)) = function.rsplit_once("::") {
+            Ok(RustFunctionName::StructMethod {
+                type_: type_.to_string(),
+                method: method.to_string(),
+            })
+        }
+    } else if !function.ends_with('>')
+        && let Some((type_, method)) = function.rsplit_once("::")
+    {
         Ok(RustFunctionName::StructMethod {
             type_: type_.to_string(),
             method: method.to_string(),
@@ -124,9 +122,81 @@ pub enum Error {
     #[error("demangling failed for {0}")]
     Demangle(String),
 
-    #[error("cannot parse {0} as a trait method")]
-    MalformedTrait(String),
+    #[error("cannot parse a type and method out of {0}")]
+    MalformedMethod(String),
 
     #[error("cannot parse trait and method out of {0}")]
     MalformedTraitMethod(String),
+}
+
+pub trait ToFunction {
+    fn debugloc(&self) -> Option<&DebugLoc>;
+    fn mangled_name(&self) -> &str;
+
+    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
+        let name = parse_mangled_name(self.mangled_name())?;
+        let capabilities = direct_fn_caps(function_caps, &name);
+
+        Ok(report::Function {
+            name,
+            location: self.debugloc().into_option_location(),
+            capabilities,
+        })
+    }
+}
+
+impl ToFunction for &llvm_ir::Function {
+    fn debugloc(&self) -> Option<&DebugLoc> {
+        self.debugloc.as_ref()
+    }
+
+    fn mangled_name(&self) -> &str {
+        &self.name
+    }
+
+    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
+        let name = parse_mangled_name(&self.name)?;
+        let capabilities = direct_fn_caps(function_caps, &name);
+
+        Ok(report::Function {
+            name,
+            location: self.debugloc.into_option_location(),
+            capabilities,
+        })
+    }
+}
+
+impl ToFunction for &llvm_ir::function::FunctionDeclaration {
+    fn debugloc(&self) -> Option<&DebugLoc> {
+        self.debugloc.as_ref()
+    }
+
+    fn mangled_name(&self) -> &str {
+        &self.name
+    }
+
+    fn to_function(&self, function_caps: &FunctionCaps) -> Result<report::Function, Error> {
+        let name = parse_mangled_name(&self.name)?;
+        let capabilities = direct_fn_caps(function_caps, &name);
+
+        Ok(report::Function {
+            name,
+            location: self.debugloc.into_option_location(),
+            capabilities,
+        })
+    }
+}
+
+fn direct_fn_caps(
+    function_caps: &FunctionCaps,
+    name: &FunctionName,
+) -> BTreeMap<Capability, CapabilityType> {
+    if let Some(caps) = function_caps.get(name.display_name()) {
+        caps.caps
+            .iter()
+            .map(|cap| (*cap, CapabilityType::Direct))
+            .collect()
+    } else {
+        BTreeMap::new()
+    }
 }

@@ -3,7 +3,7 @@ use either::Either;
 use llvm_ir::{
     instruction::{Call, InlineAssembly},
     terminator::Invoke,
-    Constant, Instruction, Module, Name, Operand, Terminator, TypeRef,
+    Constant, DebugLoc, Instruction, Module, Name, Operand, Terminator, TypeRef,
 };
 use petgraph::prelude::*;
 
@@ -15,11 +15,11 @@ use petgraph::prelude::*;
 pub struct CallGraph<'m> {
     /// the call graph itself. Nodes are function names, and an edge from F to G
     /// indicates F may call G
-    graph: DiGraphMap<&'m str, ()>,
+    graph: DiGraphMap<&'m str, CallOrInvoke<'m>>,
 }
 
 impl<'m> CallGraph<'m> {
-    pub fn inner(&self) -> &DiGraphMap<&'m str, ()> {
+    pub fn inner(&self) -> &DiGraphMap<&'m str, CallOrInvoke<'m>> {
         &self.graph
     }
 
@@ -27,7 +27,7 @@ impl<'m> CallGraph<'m> {
         modules: impl IntoIterator<Item = &'m Module>,
         functions_by_type: &FunctionsByType<'m>,
     ) -> Self {
-        let mut graph: DiGraphMap<&'m str, ()> = DiGraphMap::new();
+        let mut graph: DiGraphMap<&'m str, CallOrInvoke<'m>> = DiGraphMap::new();
 
         let add_edge_for_call = |graph: &mut DiGraphMap<_, _>,
                                  caller: &'m str,
@@ -35,8 +35,11 @@ impl<'m> CallGraph<'m> {
             match call.callee() {
                 Either::Right(Operand::ConstantOperand(cref)) => {
                     match cref.as_ref() {
-                        Constant::GlobalReference { name: Name::Name(name), .. } => {
-                            graph.add_edge(caller, name, ());
+                        Constant::GlobalReference {
+                            name: Name::Name(name),
+                            ..
+                        } => {
+                            graph.add_edge(caller, name, call);
                         }
                         Constant::GlobalReference { name, .. } => {
                             unimplemented!("Call of a function with a numbered name: {name:?}")
@@ -47,7 +50,7 @@ impl<'m> CallGraph<'m> {
                             // to any function in the current module that has
                             // the appropriate type
                             for target in functions_by_type.functions_with_type(&call.callee_ty()) {
-                                graph.add_edge(caller, target, ());
+                                graph.add_edge(caller, target, call.clone());
                             }
                         }
                     }
@@ -57,7 +60,7 @@ impl<'m> CallGraph<'m> {
                     // function in the current module that has the
                     // appropriate type
                     for target in functions_by_type.functions_with_type(&call.callee_ty()) {
-                        graph.add_edge(caller, target, ());
+                        graph.add_edge(caller, target, call.clone());
                     }
                 }
                 Either::Left(_) => {} // ignore calls to inline assembly
@@ -129,7 +132,8 @@ impl<'m> CallGraph<'m> {
     }
 }
 
-enum CallOrInvoke<'a> {
+#[derive(Clone)]
+pub enum CallOrInvoke<'a> {
     Call {
         #[cfg_attr(feature = "llvm-15-or-greater", allow(dead_code))]
         module: &'a Module,
@@ -148,6 +152,13 @@ impl<'a> CallOrInvoke<'a> {
         match self {
             Self::Call { module, .. } => module,
             Self::Invoke { module, .. } => module,
+        }
+    }
+
+    pub fn debugloc(&self) -> Option<&'a DebugLoc> {
+        match self {
+            CallOrInvoke::Call { call, .. } => call.debugloc.as_ref(),
+            CallOrInvoke::Invoke { invoke, .. } => invoke.debugloc.as_ref(),
         }
     }
 
