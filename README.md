@@ -1,6 +1,10 @@
-# PROJECT NAME
+# cargo-capslock
 
-Project Description
+This is an in-development, experimental tool to analyse Rust projects and
+ascertain which [Capslock](https://github.com/google/capslock) capabilities
+they require.
+
+This project has been funded by [Alpha-Omega](https://alpha-omega.dev/).
 
 ## [Code of Conduct][code-of-conduct]
 
