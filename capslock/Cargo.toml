@@ -1,0 +1,12 @@
+[package]
+name = "capslock"
+description = "Common language-independent types for cargo-capslock functionality"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+strum = { workspace = true, features = ["derive"] }

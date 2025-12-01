@@ -1,0 +1,19 @@
+[package]
+name = "capslock-cm"
+description = ".cm file parsing into a static Rust structure"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+capslock = { workspace = true }
+itertools.workspace = true
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+thiserror.workspace = true

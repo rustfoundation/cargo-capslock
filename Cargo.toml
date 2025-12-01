@@ -1,0 +1,75 @@
+[workspace]
+resolver = "3"
+members = ["capslock", "capslock-cm", "capslock-rust"]
+exclude = ["llvm-ir-analysis"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Adam Harvey <adam@adamharvey.name>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.91"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+capslock = { version = "0.1.0", path = "capslock" }
+capslock-cm = { version = "0.1.0", path = "capslock-cm" }
+capslock-rust = { version = "0.1.0", path = "capslock-rust" }
+clap = "4.5.53"
+escargot = "0.5.15"
+insta = "1.44.1"
+itertools = "0.14.0"
+llvm-ir-analysis = { path = "llvm-ir-analysis" }
+nix = "0.30.1"
+ouroboros = "0.18.5"
+petgraph = "0.8.3"
+proc-macro2 = "1.0.103"
+ptrace-iterator = { version = "0.1.0", git = "https://github.com/LawnGnome/ptrace-iterator.git", rev = "6aa9e5c" }
+quote = "1.0.42"
+serde = "1.0.228"
+serde_json = "1.0.145"
+signal-hook = "0.3.18"
+strum = "0.27.2"
+symbolic = { version = "12.17.0", default-features = false }
+syn = "2.0.111"
+tempfile = "3.23.0"
+thiserror = "2.0.17"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
+unwind = "0.4.2"
+walkdir = "2.5.0"
+
+[package]
+name = "cargo-capslock"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+capslock = { workspace = true }
+capslock-cm = { workspace = true }
+capslock-rust = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+escargot = { workspace = true }
+itertools = { workspace = true }
+llvm-ir-analysis = { workspace = true, features = [
+    "llvm-19",
+    "strict-versioning",
+] }
+nix = { workspace = true, features = ["signal"] }
+ouroboros = { workspace = true }
+petgraph = { workspace = true }
+ptrace-iterator = { workspace = true, features = ["tracing"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+signal-hook = { workspace = true }
+symbolic = { workspace = true, features = ["debuginfo", "demangle"] }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "time"] }
+unwind = { workspace = true, features = ["ptrace"] }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true, features = ["serde", "yaml"] }
