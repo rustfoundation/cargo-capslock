@@ -61,6 +61,7 @@ struct Process {
 }
 
 impl Process {
+    #[tracing::instrument(err)]
     fn build(pid: Pid) -> anyhow::Result<Self> {
         // We're going to read the functions and their locations out of the debuginfo in the PID's
         // executable. It's easier to simply persist them once than to keep a debug session around
