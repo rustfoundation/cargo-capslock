@@ -29,7 +29,7 @@ impl Opt {
 
         match self.command {
             Command::Static(cmd) => cmd.main(),
-            Command::Dynamic(cmd) => cmd.main(),
+            Command::Dynamic(cmd) => Ok(cmd.main()?),
         }
     }
 }

@@ -7,13 +7,15 @@ use signal_hook::{
     iterator::{Handle, Signals},
 };
 
+use crate::dynamic::error::Error;
+
 pub struct SignalForwarder {
     handle: Handle,
 }
 
 impl SignalForwarder {
-    pub fn spawn(pid: impl Piddable) -> anyhow::Result<Self> {
-        let signals = Signals::new([SIGINT])?;
+    pub fn spawn(pid: impl Piddable) -> Result<Self, Error> {
+        let signals = Signals::new([SIGINT]).map_err(Error::Signals)?;
         let handle = signals.handle();
         let pid = pid.into_pid();
 
@@ -26,9 +28,11 @@ impl SignalForwarder {
         Ok(Self { handle })
     }
 
-    fn listen(mut signals: Signals, pid: Pid) -> anyhow::Result<()> {
+    #[tracing::instrument(level = "TRACE", skip(signals), err)]
+    fn listen(mut signals: Signals, pid: Pid) -> Result<(), Error> {
         for signal in signals.forever() {
-            nix::sys::signal::kill(pid, Some(signal.try_into()?))?;
+            nix::sys::signal::kill(pid, Some(signal.try_into().map_err(Error::Signal)?))
+                .map_err(|e| Error::Kill { e, pid })?;
         }
 
         Ok(())

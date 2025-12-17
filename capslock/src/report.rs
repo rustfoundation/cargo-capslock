@@ -1,19 +1,47 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Capability, caps::CapabilityType};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Report {
     pub path: PathBuf,
     pub capabilities: BTreeSet<Capability>,
     pub functions: Vec<Function>,
     pub edges: Vec<Edge>,
+}
+
+impl Serialize for Report {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct Raw<'a> {
+            path: &'a Path,
+            capabilities: BTreeSet<Capability>,
+            functions: &'a [Function],
+            edges: &'a [Edge],
+        }
+
+        Raw {
+            path: &self.path,
+            capabilities: self
+                .capabilities
+                .iter()
+                .copied()
+                .filter(|cap| self.capabilities.len() < 2 || *cap != Capability::Safe)
+                .collect(),
+            functions: &self.functions,
+            edges: &self.edges,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

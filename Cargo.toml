@@ -56,7 +56,7 @@ llvm-ir-analysis = { workspace = true, features = [
     "llvm-19",
     "strict-versioning",
 ] }
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["fs", "signal"] }
 ouroboros = { workspace = true }
 petgraph = { workspace = true }
 ptrace-iterator = { workspace = true, features = ["tracing"] }

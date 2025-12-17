@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, VecDeque},
+    collections::{HashMap, VecDeque},
     ffi::OsString,
     fs::File,
     io::Write,
@@ -7,74 +7,76 @@ use std::{
     process::Command,
 };
 
-use capslock::{
-    Capability, CapabilityType,
-    report::{self},
-};
+use capslock::CapabilityType;
 use clap::Parser;
-use ptrace_iterator::{CommandTrace, Tracer, event::Event};
+use nix::unistd::Pid;
+use ptrace_iterator::{
+    CommandTrace, Piddable, Tracer,
+    event::{Event, SyscallEntry, SyscallExit},
+};
 use symbolic::common::Name;
-use unwind::{Accessors, AddressSpace, Byteorder, Cursor, PTraceState, RegNum};
+use unwind::{Accessors, AddressSpace, Byteorder, Cursor, PTraceState, PTraceStateRef, RegNum};
 
 use crate::{
-    dynamic::signal::SignalForwarder,
-    function::{FunctionMap, ToFunction},
-    graph::CallGraph,
+    dynamic::{error::Error, location::Lookup, signal::SignalForwarder, syscall::Meta},
+    function::ToFunction,
 };
 
+mod error;
+mod fd;
 mod location;
+mod process;
 mod signal;
+mod syscall;
 
 #[derive(Parser, Debug)]
 pub struct Dynamic {
+    /// If enabled, functions before `_start` will also be included in the output.
+    #[arg(long)]
+    include_before_start: bool,
+
+    /// If enabled, source file locations will be looked up via debuginfo.
+    ///
+    /// This tends to have a significant performance impact.
     #[arg(short, long)]
     lookup_locations: bool,
 
+    /// If provided, the file to write the JSON output to.
     #[arg(short, long)]
     output: Option<PathBuf>,
 
+    /// The command and any arguments to analyse.
     #[arg(num_args=1..)]
     argv: Vec<OsString>,
 }
 
 impl Dynamic {
     #[tracing::instrument(err)]
-    pub fn main(self) -> anyhow::Result<()> {
+    pub fn main(self) -> Result<(), Error> {
         // Wrangle argv and extract the command path.
         let mut argv = self.argv.into_iter().collect::<VecDeque<_>>();
-        let path = argv
-            .pop_front()
-            .ok_or_else(|| anyhow::anyhow!("cannot get argv[0]"))?;
+        let path = argv.pop_front().ok_or(Error::Argv0)?;
 
         // Spawn the command we're going to trace.
         let mut cmd = Command::new(&path);
         cmd.args(argv).traceme();
-        let child = cmd.spawn()?;
+        let child = cmd.spawn().map_err(Error::Spawn)?;
+        let child_pid = child.id().into_pid();
 
         // Set up signal handling to pass signals on to the child.
         let signal_forwarder = SignalForwarder::spawn(child.id())?;
 
-        // Set up our location lookup service based on the command line flags.
-        let mut location_lookup = if self.lookup_locations {
-            location::Lookup::enabled()
-        } else {
-            location::Lookup::disabled()
-        };
-
-        // Initialise the process state. For now we'll lump all the descendant processes into one
-        // state structure, but if we ever wanted to split them out for more fine-grained reporting,
-        // that wouldn't be difficult.
-        let mut process_state = ProcessState::default();
-
-        // To take advantage of libunwind caching, we'll only construct one address space per
-        // spawned process. We'll add these lazily, though, so we don't have to track clones
-        // explicitly.
-        let mut address_spaces = HashMap::new();
+        let mut global_state = GlobalState::new(
+            child_pid,
+            std::env::current_dir().map_err(Error::Cwd)?,
+            self.include_before_start,
+            self.lookup_locations,
+        );
 
         // Actually start tracing the child.
-        let mut tracer = Tracer::<()>::new(child)?;
+        let mut tracer = Tracer::<Meta>::new(child)?;
         for event_result in tracer.iter() {
-            let event = match event_result {
+            let mut event = match event_result {
                 Ok(event) => event,
                 Err(e) => {
                     tracing::error!(%e, "tracer error");
@@ -82,95 +84,8 @@ impl Dynamic {
                 }
             };
 
-            // We're only interested in syscall exits right now, since we can check if there's an
-            // error.
-            //
-            // If and when there's more fine-grained introspection into syscalls (for example, to
-            // ascertain what an `ioctl` syscall is actually doing), then we'll likely also need to
-            // track entries so we can examine arguments. But this is sufficient for now.
-            if let Event::SyscallExit(event) = &event
-                && !event.is_error()
-            {
-                let pid = event.pid();
-                let Some(syscall) = event.syscall() else {
-                    continue;
-                };
-
-                // Even if we can't get a stack trace, let's minimally update the overall set of
-                // capabilities.
-                let syscall_caps = match crate::syscall::lookup(syscall.nr().name()) {
-                    Some(iter) => iter.collect::<BTreeSet<_>>(),
-                    None => {
-                        tracing::warn!(?syscall, "cannot find syscall in syscall capability map");
-                        continue;
-                    }
-                };
-                process_state.caps.extend(syscall_caps.iter().copied());
-
-                // Configure libunwind to use ptrace to access the child's memory space.
-                let state = PTraceState::new(pid.as_raw() as u32)?;
-                let address_space = address_spaces.entry(pid).or_insert_with(|| {
-                    AddressSpace::new(Accessors::ptrace(), Byteorder::DEFAULT).unwrap()
-                });
-                let Ok(mut cursor) = Cursor::remote(address_space, &state) else {
-                    continue;
-                };
-
-                // Now we iterate over the call stack. Note that we have to track the previous child
-                // function as well to build the call graph.
-                let mut child_idx = None;
-                loop {
-                    let Ok(ip) = cursor.register(RegNum::IP) else {
-                        break;
-                    };
-
-                    // We're only interested in stack frames that have symbol names.
-                    if let Ok(name) = cursor.procedure_name()
-                        && let Ok(info) = cursor.procedure_info()
-                        && ip == info.start_ip() + name.offset()
-                    {
-                        // If this is the first named stack frame we've seen, then we'll consider
-                        // any capabilities here to be direct. Anything higher in the stack will be
-                        // considered transitive.
-                        let ty = if child_idx.is_none() {
-                            CapabilityType::Direct
-                        } else {
-                            CapabilityType::Transitive
-                        };
-
-                        let name = Name::from(name.name());
-                        match name.to_function_with_caps(syscall_caps.iter().map(|cap| (*cap, ty)))
-                        {
-                            Ok(mut func) => {
-                                // Do the location lookup, bearing in mind that it might be a no-op
-                                // if this is disabled.
-                                func.location = location_lookup.lookup(pid, name.as_str()).cloned();
-
-                                // Ensure the function is known and get its index for the call
-                                // graph.
-                                let func_idx = process_state.functions.upsert(name.as_str(), func);
-
-                                // Actually update the call graph as long as this isn't the first
-                                // frame.
-                                if let Some(child_idx) = child_idx {
-                                    process_state.call_graph.add_edge(func_idx, child_idx, None);
-                                }
-
-                                // Update the last frame we saw.
-                                child_idx = Some(func_idx);
-                            }
-                            Err(e) => {
-                                tracing::error!(%e, ?name, "error parsing function name");
-                            }
-                        }
-                    }
-
-                    // On to the next stack frame!
-                    match cursor.step() {
-                        Ok(true) => continue,
-                        Ok(false) | Err(_) => break,
-                    }
-                }
+            if let Err(e) = global_state.handle_event(&mut event) {
+                tracing::debug!(%e, "error handling event");
             }
         }
 
@@ -180,11 +95,17 @@ impl Dynamic {
         // Output the Capslock JSON.
         let mut writer: Box<dyn Write> = if let Some(output) = self.output {
             eprintln!("Writing capslock JSON to {}", output.display());
-            Box::new(File::create(output)?)
+            Box::new(File::create(&output).map_err(|e| Error::OutputCreate {
+                e,
+                path: output.to_path_buf(),
+            })?)
         } else {
             Box::new(std::io::stdout())
         };
-        serde_json::to_writer_pretty(&mut writer, &process_state.into_report(path))?;
+        serde_json::to_writer_pretty(
+            &mut writer,
+            &global_state.processes.into_report(child_pid, path)?,
+        )?;
 
         // Do our best to forward on the child's exit status.
         if let Some(status) = tracer.status()
@@ -197,20 +118,150 @@ impl Dynamic {
     }
 }
 
-#[derive(Debug, Default)]
-struct ProcessState {
-    call_graph: CallGraph,
-    caps: BTreeSet<Capability>,
-    functions: FunctionMap,
+/// Global state while analysing a tree of running processes.
+struct GlobalState {
+    child_pid: Pid,
+    processes: process::Map,
+
+    /// To take advantage of libunwind caching, we'll only construct one address space per spawned
+    /// process. We'll add these lazily, though, so we don't have to track clones explicitly.
+    address_spaces: HashMap<Pid, AddressSpace<PTraceStateRef>>,
+
+    location_lookup: Lookup,
 }
 
-impl ProcessState {
-    fn into_report(self, path: impl Into<PathBuf>) -> report::Report {
-        report::Report {
-            path: path.into(),
-            capabilities: self.caps,
-            functions: self.functions.into_functions(),
-            edges: self.call_graph.into(),
+impl GlobalState {
+    fn new(pid: Pid, wd: PathBuf, include_before_start: bool, lookup_locations: bool) -> Self {
+        Self {
+            child_pid: pid,
+            processes: process::Map::new(pid, wd, include_before_start),
+            address_spaces: HashMap::new(),
+            location_lookup: if lookup_locations {
+                location::Lookup::enabled()
+            } else {
+                location::Lookup::disabled()
+            },
         }
+    }
+
+    #[tracing::instrument(level = "TRACE", skip_all, err)]
+    fn handle_event(&mut self, event: &mut Event<Meta>) -> Result<(), Error> {
+        match event {
+            Event::Clone(event) => self.processes.spawn(event.pid(), event.child_pid()),
+            Event::Exited(event) if event.pid() != self.child_pid => {
+                self.processes.exit(event.pid());
+                Ok(())
+            }
+            Event::SyscallEntry(event) => self.handle_syscall_entry(event),
+            Event::SyscallExit(event) if !event.is_error() => self.handle_syscall_exit(event),
+            _ => Ok(()),
+        }
+    }
+
+    #[tracing::instrument(
+        level = "TRACE",
+        skip_all,
+        err,
+        fields(
+            pid = %event.pid(),
+            syscall = event.syscall().nr().name(),
+        ),
+    )]
+    fn handle_syscall_entry(&mut self, event: &mut SyscallEntry<Meta>) -> Result<(), Error> {
+        let state = self
+            .processes
+            .get_mut_active(event.pid())
+            .ok_or_else(|| Error::ProcessUnknown(event.pid()))?;
+
+        event.set_userdata(Meta::try_from_syscall(state, event.syscall())?);
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "TRACE", skip_all, err, fields(pid = %event.pid()))]
+    fn handle_syscall_exit(&mut self, event: &mut SyscallExit<Meta>) -> Result<(), Error> {
+        let pid = event.pid();
+        let meta = event.take_userdata().ok_or(Error::SyscallMetaMissing)?;
+        let process_state = self
+            .processes
+            .get_mut_active(pid)
+            .ok_or(Error::ProcessUnknown(pid))?;
+
+        // Even if we can't get a stack trace, let's minimally update the overall set of
+        // capabilities.
+        let syscall_caps = meta.into_capabilities(process_state, event.sval())?;
+        process_state.extend_caps(syscall_caps.iter().copied());
+
+        // Configure libunwind to use ptrace to access the child's memory space.
+        let state = PTraceState::new(pid.as_raw() as u32)?;
+        let address_space = self
+            .address_spaces
+            .entry(pid)
+            .or_insert_with(|| AddressSpace::new(Accessors::ptrace(), Byteorder::DEFAULT).unwrap());
+        let mut cursor = Cursor::remote(address_space, &state)?;
+
+        let mut names = Vec::new();
+        loop {
+            let Ok(ip) = cursor.register(RegNum::IP) else {
+                return Ok(());
+            };
+
+            if let Ok(name) = cursor.procedure_name()
+                && let Ok(info) = cursor.procedure_info()
+                && ip == info.start_ip() + name.offset()
+            {
+                if name.name() == "_start" {
+                    process_state.start_seen();
+                }
+
+                names.push(name);
+            }
+
+            // On to the next stack frame!
+            match cursor.step() {
+                Ok(true) => continue,
+                Ok(false) | Err(_) => break,
+            }
+        }
+
+        if !process_state.is_waiting_for_start() {
+            let mut child_idx = None;
+
+            for name in names.into_iter() {
+                // If this is the first named stack frame we've seen, then we'll consider any
+                // capabilities here to be direct. Anything higher in the stack will be considered
+                // transitive.
+                let ty = if child_idx.is_none() {
+                    CapabilityType::Direct
+                } else {
+                    CapabilityType::Transitive
+                };
+
+                let name = Name::from(name.name());
+                match name.to_function_with_caps(syscall_caps.iter().map(|cap| (*cap, ty))) {
+                    Ok(mut func) => {
+                        // Do the location lookup, bearing in mind that it might be a no-op if this
+                        // is disabled.
+                        func.location = self.location_lookup.lookup(pid, name.as_str()).cloned();
+
+                        // Ensure the function is known and get its index for the call graph.
+                        let func_idx = process_state.upsert_function(name.as_str(), func);
+
+                        // Actually update the call graph as long as this isn't the first frame.
+                        if let Some(child_idx) = child_idx {
+                            process_state.add_edge(func_idx, child_idx);
+                        }
+
+                        // Update the last frame we saw.
+                        child_idx = Some(func_idx);
+                    }
+                    Err(e) => {
+                        tracing::error!(%e, ?name, "error parsing function name");
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
