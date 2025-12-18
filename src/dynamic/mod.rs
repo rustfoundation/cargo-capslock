@@ -100,7 +100,6 @@ impl Dynamic {
 
         // Output the Capslock JSON.
         let mut writer: Box<dyn Write> = if let Some(output) = self.output {
-            eprintln!("Writing capslock JSON to {}", output.display());
             Box::new(File::create(&output).map_err(|e| Error::OutputCreate {
                 e,
                 path: output.to_path_buf(),
