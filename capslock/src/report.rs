@@ -8,40 +8,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Capability, caps::CapabilityType};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Report {
-    pub path: PathBuf,
-    pub capabilities: BTreeSet<Capability>,
-    pub functions: Vec<Function>,
-    pub edges: Vec<Edge>,
-}
-
-impl Serialize for Report {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        #[derive(Serialize)]
-        struct Raw<'a> {
-            path: &'a Path,
-            capabilities: BTreeSet<Capability>,
-            functions: &'a [Function],
-            edges: &'a [Edge],
-        }
-
-        Raw {
-            path: &self.path,
-            capabilities: self
-                .capabilities
-                .iter()
-                .copied()
-                .filter(|cap| self.capabilities.len() < 2 || *cap != Capability::Safe)
-                .collect(),
-            functions: &self.functions,
-            edges: &self.edges,
-        }
-        .serialize(serializer)
-    }
+    #[serde(flatten)]
+    pub process: Process,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Process>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,4 +148,42 @@ pub struct Location {
     pub filename: PathBuf,
     pub line: u64,
     pub column: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Process {
+    pub path: PathBuf,
+    pub capabilities: BTreeSet<Capability>,
+    pub functions: Vec<Function>,
+    pub edges: Vec<Edge>,
+}
+
+impl Serialize for Process {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct Raw<'a> {
+            path: &'a Path,
+            capabilities: BTreeSet<Capability>,
+            functions: &'a [Function],
+            edges: &'a [Edge],
+        }
+
+        Raw {
+            path: &self.path,
+            capabilities: process_cap_set(&self.capabilities),
+            functions: &self.functions,
+            edges: &self.edges,
+        }
+        .serialize(serializer)
+    }
+}
+
+fn process_cap_set(caps: &BTreeSet<Capability>) -> BTreeSet<Capability> {
+    caps.iter()
+        .copied()
+        .filter(|cap| caps.len() < 2 || *cap != Capability::Safe)
+        .collect()
 }

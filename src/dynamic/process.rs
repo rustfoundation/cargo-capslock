@@ -1,5 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    ffi::OsString,
     ops::RangeInclusive,
     path::{Path, PathBuf},
 };
@@ -14,20 +15,27 @@ use crate::{
     graph::CallGraph,
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Map {
     active: BTreeMap<Pid, State>,
     inactive: Vec<(Pid, State)>,
 
     include_before_start: bool,
+    init_pid: Pid,
 }
 
 impl Map {
-    pub fn new(init_pid: Pid, init_wd: impl Into<PathBuf>, include_before_start: bool) -> Self {
+    pub fn new(
+        init_pid: Pid,
+        init_exec: Exec,
+        init_wd: impl Into<PathBuf>,
+        include_before_start: bool,
+    ) -> Self {
         Self {
             active: [(
                 init_pid,
                 State {
+                    execs: [init_exec].into_iter().collect(),
                     fds: Default::default(),
                     pid: init_pid,
                     waiting_for_start: !include_before_start,
@@ -41,12 +49,15 @@ impl Map {
             .collect(),
             inactive: Vec::new(),
             include_before_start,
+            init_pid,
         }
     }
 
     #[tracing::instrument(level = "TRACE", skip(self))]
     pub fn exit(&mut self, pid: Pid) {
-        if let Some(state) = self.active.remove(&pid) {
+        if pid != self.init_pid
+            && let Some(state) = self.active.remove(&pid)
+        {
             self.inactive.push((pid, state));
         }
     }
@@ -66,6 +77,7 @@ impl Map {
         self.active.insert(
             child,
             State {
+                execs: Default::default(),
                 fds: parent
                     .fds
                     .iter()
@@ -84,21 +96,43 @@ impl Map {
         Ok(())
     }
 
-    pub fn into_report(
-        mut self,
-        pid: Pid,
-        path: impl Into<PathBuf>,
-    ) -> Result<report::Report, Error> {
-        Ok(self
-            .active
-            .remove(&pid)
-            .ok_or(Error::ChildMissing(pid))?
-            .into_report(path))
+    pub fn into_report(mut self, include_children: bool) -> Result<report::Report, Error> {
+        // Aggregate overall capabilities.
+        let mut capabilities = BTreeSet::new();
+        for (_, state) in self.iter_states() {
+            capabilities.extend(state.caps.iter().copied());
+        }
+
+        // Build the final report.
+        Ok(report::Report {
+            process: self
+                .active
+                .remove(&self.init_pid)
+                .ok_or(Error::ChildMissing(self.init_pid))?
+                .into_process(),
+            children: if include_children {
+                self.active
+                    .into_values()
+                    .chain(self.inactive.into_iter().map(|(_, state)| state))
+                    .map(|state| state.into_process())
+                    .collect()
+            } else {
+                Vec::new()
+            },
+        })
+    }
+
+    fn iter_states(&self) -> impl Iterator<Item = (Pid, &State)> {
+        self.active
+            .iter()
+            .map(|(pid, state)| (*pid, state))
+            .chain(self.inactive.iter().map(|(pid, state)| (*pid, state)))
     }
 }
 
 #[derive(Debug)]
 pub struct State {
+    execs: VecDeque<Exec>,
     fds: BTreeMap<Fd, fd::Meta>,
     pid: Pid,
     waiting_for_start: bool,
@@ -112,6 +146,10 @@ pub struct State {
 impl State {
     pub fn add_edge(&mut self, from: usize, to: usize) {
         self.call_graph.add_edge(from, to, None);
+    }
+
+    pub fn add_exec(&mut self, exec: Exec) {
+        self.execs.push_back(exec);
     }
 
     pub fn close(&mut self, fd: Fd) {
@@ -166,12 +204,42 @@ impl State {
         self.functions.upsert(mangled, function)
     }
 
-    pub fn into_report(self, path: impl Into<PathBuf>) -> report::Report {
-        report::Report {
-            path: path.into(),
+    pub fn into_process(mut self) -> report::Process {
+        report::Process {
+            path: if let Some(exec) = self.execs.pop_front() {
+                exec.command.into()
+            } else {
+                PathBuf::new()
+            },
             capabilities: self.caps,
             functions: self.functions.into_functions(),
             edges: self.call_graph.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Exec {
+    command: OsString,
+    #[allow(unused)]
+    argv: Vec<OsString>,
+    #[allow(unused)]
+    envp: Vec<OsString>,
+}
+
+impl Exec {
+    pub fn new<Command, Argv, Envp>(command: Command, argv: Argv, envp: Envp) -> Self
+    where
+        Command: Into<OsString>,
+        Argv: Iterator,
+        Argv::Item: Into<OsString>,
+        Envp: Iterator,
+        Envp::Item: Into<OsString>,
+    {
+        Self {
+            command: command.into(),
+            argv: argv.map(|arg| arg.into()).collect(),
+            envp: envp.map(|env| env.into()).collect(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt::Debug, path::PathBuf};
 
-use capslock::Report;
+use capslock::{Report, report};
 use llvm_ir_analysis::{ModuleAnalysis, llvm_ir::Module};
 use ouroboros::self_referencing;
 use petgraph::graphmap::DiGraphMap;
@@ -58,10 +58,13 @@ impl Bitcode {
         });
 
         Report {
-            path: self.path,
-            capabilities,
-            functions,
-            edges: self.call_graph.into(),
+            process: report::Process {
+                path: self.path,
+                capabilities,
+                functions,
+                edges: self.call_graph.into(),
+            },
+            children: Vec::new(),
         }
     }
 }

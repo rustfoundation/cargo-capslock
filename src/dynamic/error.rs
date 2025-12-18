@@ -1,4 +1,8 @@
-use std::{ffi::c_ulong, num::ParseIntError, path::PathBuf};
+use std::{
+    ffi::c_ulong,
+    num::{ParseIntError, TryFromIntError},
+    path::PathBuf,
+};
 
 use nix::{errno::Errno, unistd::Pid};
 use ptrace_iterator::{Sysno, core::Fd};
@@ -16,6 +20,13 @@ pub enum Error {
 
     #[error("cannot get current working directory: {0}")]
     Cwd(#[source] std::io::Error),
+
+    #[error("parsing raw FD {fd}: {e}")]
+    FdParse {
+        #[source]
+        e: TryFromIntError,
+        fd: u64,
+    },
 
     #[error("unknown ioctl command {cmd} for FD type {ty:?}")]
     Ioctl { cmd: c_ulong, ty: fd::Type },

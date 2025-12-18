@@ -31,6 +31,11 @@ mod syscall;
 
 #[derive(Parser, Debug)]
 pub struct Dynamic {
+    /// If enabled, an additional section will be added to the JSON output providing information for
+    /// child processes.
+    #[arg(short = 'c', long)]
+    include_children: bool,
+
     /// If enabled, functions before `_start` will also be included in the output.
     #[arg(long)]
     include_before_start: bool,
@@ -59,7 +64,7 @@ impl Dynamic {
 
         // Spawn the command we're going to trace.
         let mut cmd = Command::new(&path);
-        cmd.args(argv).traceme();
+        cmd.args(&argv).traceme();
         let child = cmd.spawn().map_err(Error::Spawn)?;
         let child_pid = child.id().into_pid();
 
@@ -68,6 +73,7 @@ impl Dynamic {
 
         let mut global_state = GlobalState::new(
             child_pid,
+            process::Exec::new(path, argv.into_iter(), std::iter::empty::<OsString>()),
             std::env::current_dir().map_err(Error::Cwd)?,
             self.include_before_start,
             self.lookup_locations,
@@ -104,7 +110,7 @@ impl Dynamic {
         };
         serde_json::to_writer_pretty(
             &mut writer,
-            &global_state.processes.into_report(child_pid, path)?,
+            &global_state.processes.into_report(self.include_children)?,
         )?;
 
         // Do our best to forward on the child's exit status.
@@ -120,7 +126,6 @@ impl Dynamic {
 
 /// Global state while analysing a tree of running processes.
 struct GlobalState {
-    child_pid: Pid,
     processes: process::Map,
 
     /// To take advantage of libunwind caching, we'll only construct one address space per spawned
@@ -131,10 +136,15 @@ struct GlobalState {
 }
 
 impl GlobalState {
-    fn new(pid: Pid, wd: PathBuf, include_before_start: bool, lookup_locations: bool) -> Self {
+    fn new(
+        pid: Pid,
+        exec: process::Exec,
+        wd: PathBuf,
+        include_before_start: bool,
+        lookup_locations: bool,
+    ) -> Self {
         Self {
-            child_pid: pid,
-            processes: process::Map::new(pid, wd, include_before_start),
+            processes: process::Map::new(pid, exec, wd, include_before_start),
             address_spaces: HashMap::new(),
             location_lookup: if lookup_locations {
                 location::Lookup::enabled()
@@ -144,11 +154,11 @@ impl GlobalState {
         }
     }
 
-    #[tracing::instrument(level = "TRACE", skip_all, err)]
+    #[tracing::instrument(level = "TRACE", skip(self), err)]
     fn handle_event(&mut self, event: &mut Event<Meta>) -> Result<(), Error> {
         match event {
             Event::Clone(event) => self.processes.spawn(event.pid(), event.child_pid()),
-            Event::Exited(event) if event.pid() != self.child_pid => {
+            Event::Exited(event) => {
                 self.processes.exit(event.pid());
                 Ok(())
             }

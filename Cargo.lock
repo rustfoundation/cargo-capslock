@@ -1478,7 +1478,7 @@ dependencies = [
 [[package]]
 name = "ptrace-iterator"
 version = "0.1.0"
-source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=6aa9e5c#6aa9e5c0d597bb1f5a8150b863134934cc7b5754"
+source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=fbed919#fbed919fe4c0097a0fb06b9265b1c58d162fe1f1"
 dependencies = [
  "linux-aio-sys",
  "linux-raw-sys 0.12.0",
@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "ptrace-iterator-attr-macro"
 version = "0.1.0"
-source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=6aa9e5c#6aa9e5c0d597bb1f5a8150b863134934cc7b5754"
+source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=fbed919#fbed919fe4c0097a0fb06b9265b1c58d162fe1f1"
 dependencies = [
  "darling",
  "itertools",
@@ -1507,7 +1507,7 @@ dependencies = [
 [[package]]
 name = "ptrace-iterator-core"
 version = "0.1.0"
-source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=6aa9e5c#6aa9e5c0d597bb1f5a8150b863134934cc7b5754"
+source = "git+https://github.com/LawnGnome/ptrace-iterator.git?rev=fbed919#fbed919fe4c0097a0fb06b9265b1c58d162fe1f1"
 dependencies = [
  "linux-raw-sys 0.12.0",
  "nix",

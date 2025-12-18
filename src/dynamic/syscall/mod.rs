@@ -1,11 +1,20 @@
-use std::{collections::BTreeSet, ffi::c_ulong, ops::RangeInclusive, path::PathBuf};
+use std::{
+    collections::BTreeSet,
+    ffi::{OsString, c_ulong},
+    ops::RangeInclusive,
+    path::PathBuf,
+};
 
 use capslock::Capability;
+use itertools::Itertools;
 use nix::{
     fcntl::OFlag,
     sys::socket::{AddressFamily, SockType},
 };
-use ptrace_iterator::{Syscall, Sysno, core::Fd};
+use ptrace_iterator::{
+    Syscall, Sysno,
+    core::{Fd, TryFromArg},
+};
 
 use crate::{
     dynamic::{error::Error, fd, process},
@@ -22,11 +31,27 @@ pub struct Meta {
 
 #[derive(Debug, Clone)]
 enum Typed {
-    Chdir { path: PathBuf },
-    Close { fd: Fd },
-    CloseRange { range: RangeInclusive<Fd> },
-    FdCreate { meta: fd::Meta },
-    Ioctl { cmd: c_ulong, fd: Fd },
+    Chdir {
+        path: PathBuf,
+    },
+    Close {
+        fd: Fd,
+    },
+    CloseRange {
+        range: RangeInclusive<Fd>,
+    },
+    Exec {
+        path: PathBuf,
+        argv: Vec<OsString>,
+        envp: Vec<OsString>,
+    },
+    FdCreate {
+        meta: fd::Meta,
+    },
+    Ioctl {
+        cmd: c_ulong,
+        fd: Fd,
+    },
 }
 
 impl Meta {
@@ -107,6 +132,16 @@ impl Meta {
                     cmd: args.cmd() as c_ulong,
                     fd: args.fd(),
                 }),
+                Syscall::Execve(args) => Some(Typed::Exec {
+                    path: unsafe { args.filename(pid) }?,
+                    argv: unsafe { args.argv(pid) }.try_collect()?,
+                    envp: unsafe { args.envp(pid) }.try_collect()?,
+                }),
+                Syscall::Execveat(args) => Some(Typed::Exec {
+                    path: unsafe { args.filename(pid) }?,
+                    argv: unsafe { args.argv(pid) }.try_collect()?,
+                    envp: unsafe { args.envp(pid) }.try_collect()?,
+                }),
                 _ => None,
             },
         })
@@ -131,9 +166,20 @@ impl Meta {
                 Typed::CloseRange { range } => {
                     state.close_range(range);
                 }
+                Typed::Exec { path, argv, envp } => {
+                    state.add_exec(process::Exec::new(
+                        path.into_os_string(),
+                        argv.into_iter(),
+                        envp.into_iter(),
+                    ));
+                }
                 Typed::FdCreate { meta } => {
                     // Update the process state, since we have the FD and metadata available.
-                    state.insert_fd(sval.into(), meta);
+                    state.insert_fd(
+                        Fd::try_from_arg(sval as u64)
+                            .map_err(|e| Error::FdParse { e, fd: sval as u64 })?,
+                        meta,
+                    );
                 }
                 Typed::Ioctl { cmd, fd } => {
                     if let Some(meta) = match state.get_fd(fd) {
