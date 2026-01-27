@@ -58,13 +58,12 @@ impl Bitcode {
         });
 
         Report {
-            process: report::Process {
+            processes: vec![report::Process {
                 path: self.path,
                 capabilities,
                 functions,
                 edges: self.call_graph.into(),
-            },
-            children: Vec::new(),
+            }],
         }
     }
 }

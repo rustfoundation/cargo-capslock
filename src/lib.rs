@@ -11,6 +11,7 @@ mod graph;
 mod location;
 mod r#static;
 mod syscall;
+mod test;
 
 #[derive(Parser)]
 pub struct Opt {
@@ -30,6 +31,7 @@ impl Opt {
         match self.command {
             Command::Static(cmd) => cmd.main(),
             Command::Dynamic(cmd) => Ok(cmd.main()?),
+            Command::Test(cmd) => Ok(cmd.main()?),
         }
     }
 }
@@ -44,4 +46,7 @@ pub enum Command {
     /// If the process isn't built in Rust, or lacks debuginfo, this probably won't be as effective
     /// as you might hope.
     Dynamic(dynamic::Dynamic),
+
+    /// Build the tests for the current crate and run each one in turn.
+    Test(test::Test),
 }

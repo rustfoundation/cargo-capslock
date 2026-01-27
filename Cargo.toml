@@ -50,7 +50,8 @@ capslock = { workspace = true }
 capslock-cm = { workspace = true }
 capslock-rust = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-escargot = { workspace = true }
+escargot.workspace = true
+indicatif = "0.18.3"
 itertools = { workspace = true }
 llvm-ir-analysis = { workspace = true, features = [
     "llvm-19",

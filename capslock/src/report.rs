@@ -8,12 +8,40 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Capability, caps::CapabilityType};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Report {
-    #[serde(flatten)]
-    pub process: Process,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<Process>,
+    pub processes: Vec<Process>,
+}
+
+impl Serialize for Report {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct Raw<'a> {
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            processes: &'a Vec<Process>,
+
+            capabilities: BTreeSet<Capability>,
+            syscalls: BTreeSet<&'a str>,
+        }
+
+        let mut capabilities = BTreeSet::new();
+        let mut syscalls = BTreeSet::new();
+        for proc in self.processes.iter() {
+            capabilities.extend(process_cap_set(&proc.capabilities).into_iter());
+            syscalls.extend(collect_syscalls(&proc.functions).into_iter());
+        }
+
+        let raw = Raw {
+            processes: &self.processes,
+            capabilities,
+            syscalls,
+        };
+
+        raw.serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

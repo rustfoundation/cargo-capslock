@@ -17,7 +17,7 @@ use ptrace_iterator::{
 use symbolic::common::Name;
 use unwind::{Accessors, AddressSpace, Byteorder, Cursor, PTraceState, PTraceStateRef, RegNum};
 
-use crate::{
+pub use crate::{
     dynamic::{error::Error, location::Lookup, signal::SignalForwarder, syscall::Meta},
     function::ToFunction,
 };
@@ -25,7 +25,7 @@ use crate::{
 mod error;
 mod fd;
 mod location;
-mod process;
+pub mod process;
 mod signal;
 mod syscall;
 
@@ -129,7 +129,7 @@ impl Dynamic {
 }
 
 /// Global state while analysing a tree of running processes.
-struct GlobalState {
+pub struct GlobalState {
     processes: process::Map,
 
     /// To take advantage of libunwind caching, we'll only construct one address space per spawned
@@ -141,7 +141,7 @@ struct GlobalState {
 }
 
 impl GlobalState {
-    fn new(
+    pub fn new(
         pid: Pid,
         exec: process::Exec,
         wd: PathBuf,
@@ -162,7 +162,7 @@ impl GlobalState {
     }
 
     #[tracing::instrument(level = "TRACE", skip(self), err)]
-    fn handle_event(&mut self, event: &mut Event<Meta>) -> Result<(), Error> {
+    pub fn handle_event(&mut self, event: &mut Event<Meta>) -> Result<(), Error> {
         match event {
             Event::Clone(event) => self.processes.spawn(event.pid(), event.child_pid()),
             Event::Exited(event) => {
@@ -173,6 +173,10 @@ impl GlobalState {
             Event::SyscallExit(event) if !event.is_error() => self.handle_syscall_exit(event),
             _ => Ok(()),
         }
+    }
+
+    pub fn into_report(self, include_children: bool) -> Result<capslock::Report, Error> {
+        self.processes.into_report(include_children)
     }
 
     #[tracing::instrument(

@@ -97,36 +97,24 @@ impl Map {
     }
 
     pub fn into_report(mut self, include_children: bool) -> Result<report::Report, Error> {
-        // Aggregate overall capabilities.
-        let mut capabilities = BTreeSet::new();
-        for (_, state) in self.iter_states() {
-            capabilities.extend(state.caps.iter().copied());
-        }
-
-        // Build the final report.
-        Ok(report::Report {
-            process: self
-                .active
+        let mut processes = vec![
+            self.active
                 .remove(&self.init_pid)
                 .ok_or(Error::ChildMissing(self.init_pid))?
                 .into_process(),
-            children: if include_children {
+        ];
+
+        if include_children {
+            processes.extend(
                 self.active
                     .into_values()
                     .chain(self.inactive.into_iter().map(|(_, state)| state))
-                    .map(|state| state.into_process())
-                    .collect()
-            } else {
-                Vec::new()
-            },
-        })
-    }
+                    .map(|state| state.into_process()),
+            );
+        }
 
-    fn iter_states(&self) -> impl Iterator<Item = (Pid, &State)> {
-        self.active
-            .iter()
-            .map(|(pid, state)| (*pid, state))
-            .chain(self.inactive.iter().map(|(pid, state)| (*pid, state)))
+        // Build the final report.
+        Ok(report::Report { processes })
     }
 }
 
