@@ -29,6 +29,8 @@ pub struct Function {
     pub name: FunctionName,
     pub location: Option<Location>,
     pub capabilities: BTreeMap<Capability, CapabilityType>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub syscalls: BTreeSet<String>,
 }
 
 impl Function {
@@ -50,6 +52,10 @@ impl Function {
                 entry.insert(std::cmp::max(*entry.get(), ty));
             }
         }
+    }
+
+    pub fn insert_syscall(&mut self, syscall: impl ToString) {
+        self.syscalls.insert(syscall.to_string());
     }
 }
 
@@ -169,6 +175,8 @@ impl Serialize for Process {
             capabilities: BTreeSet<Capability>,
             functions: &'a [Function],
             edges: &'a [Edge],
+            #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+            syscalls: BTreeSet<&'a str>,
         }
 
         Raw {
@@ -176,9 +184,19 @@ impl Serialize for Process {
             capabilities: process_cap_set(&self.capabilities),
             functions: &self.functions,
             edges: &self.edges,
+            syscalls: collect_syscalls(&self.functions),
         }
         .serialize(serializer)
     }
+}
+
+fn collect_syscalls(functions: &[Function]) -> BTreeSet<&str> {
+    functions
+        .iter()
+        .fold(BTreeSet::new(), |mut syscalls, func| {
+            syscalls.extend(func.syscalls.iter().map(|syscall| syscall.as_str()));
+            syscalls
+        })
 }
 
 fn process_cap_set(caps: &BTreeSet<Capability>) -> BTreeSet<Capability> {

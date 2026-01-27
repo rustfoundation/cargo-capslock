@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use capslock::{
     Capability, CapabilityType,
@@ -140,6 +140,7 @@ pub trait ToFunction {
             name: parse_mangled_name(self.mangled_name())?,
             location: self.debugloc().into_option_location(),
             capabilities: BTreeMap::new(),
+            syscalls: BTreeSet::new(),
         })
     }
 
@@ -151,6 +152,7 @@ pub trait ToFunction {
             name: parse_mangled_name(self.mangled_name())?,
             location: self.debugloc().into_option_location(),
             capabilities: caps.collect(),
+            syscalls: BTreeSet::new(),
         })
     }
 
@@ -165,6 +167,7 @@ pub trait ToFunction {
             name,
             location: self.debugloc().into_option_location(),
             capabilities,
+            syscalls: BTreeSet::new(),
         })
     }
 }

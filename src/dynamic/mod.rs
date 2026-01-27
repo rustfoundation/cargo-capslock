@@ -40,6 +40,10 @@ pub struct Dynamic {
     #[arg(long)]
     include_before_start: bool,
 
+    /// If enabled, the actual syscalls invoked will be included in the output.
+    #[arg(long)]
+    include_syscalls: bool,
+
     /// If enabled, source file locations will be looked up via debuginfo.
     ///
     /// This tends to have a significant performance impact.
@@ -76,6 +80,7 @@ impl Dynamic {
             process::Exec::new(path, argv.into_iter(), std::iter::empty::<OsString>()),
             std::env::current_dir().map_err(Error::Cwd)?,
             self.include_before_start,
+            self.include_syscalls,
             self.lookup_locations,
         );
 
@@ -131,6 +136,7 @@ struct GlobalState {
     /// process. We'll add these lazily, though, so we don't have to track clones explicitly.
     address_spaces: HashMap<Pid, AddressSpace<PTraceStateRef>>,
 
+    include_syscalls: bool,
     location_lookup: Lookup,
 }
 
@@ -140,11 +146,13 @@ impl GlobalState {
         exec: process::Exec,
         wd: PathBuf,
         include_before_start: bool,
+        include_syscalls: bool,
         lookup_locations: bool,
     ) -> Self {
         Self {
             processes: process::Map::new(pid, exec, wd, include_before_start),
             address_spaces: HashMap::new(),
+            include_syscalls,
             location_lookup: if lookup_locations {
                 location::Lookup::enabled()
             } else {
@@ -249,6 +257,14 @@ impl GlobalState {
                 let name = Name::from(name.name());
                 match name.to_function_with_caps(syscall_caps.iter().map(|cap| (*cap, ty))) {
                     Ok(mut func) => {
+                        // Add syscall if this is a direct syscall.
+                        if self.include_syscalls
+                            && ty == CapabilityType::Direct
+                            && let Some(syscall) = event.syscall()
+                        {
+                            func.insert_syscall(syscall.nr());
+                        }
+
                         // Do the location lookup, bearing in mind that it might be a no-op if this
                         // is disabled.
                         func.location = self.location_lookup.lookup(pid, name.as_str()).cloned();
