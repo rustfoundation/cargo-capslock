@@ -225,7 +225,7 @@ name = "capslock-cm"
 version = "0.1.0"
 dependencies = [
  "capslock",
- "itertools",
+ "cm",
  "proc-macro2 1.0.103",
  "quote 1.0.42",
  "syn 2.0.111",
@@ -238,6 +238,16 @@ version = "0.1.0"
 dependencies = [
  "capslock",
  "serde",
+]
+
+[[package]]
+name = "capslock-seccomp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.53",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -372,6 +382,15 @@ name = "clap_lex"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
+
+[[package]]
+name = "cm"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "itertools",
+ "thiserror 2.0.17",
+]
 
 [[package]]
 name = "colorchoice"
@@ -767,9 +786,9 @@ checksum = "0cfe9645a18782869361d9c8732246be7b410ad4e919d3609ebabdac00ba12c3"
 
 [[package]]
 name = "indexmap"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad4bb2b565bca0645f4d68c5c9af97fba094e9791da685bf83cb5f3ce74acf2"
+checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",

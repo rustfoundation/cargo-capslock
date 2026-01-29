@@ -1,0 +1,12 @@
+[package]
+name = "cm"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+indexmap = { workspace = true }
+itertools.workspace = true
+thiserror.workspace = true

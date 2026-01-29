@@ -1,5 +1,5 @@
 pub use {
-    caps::{Capability, CapabilityType},
+    caps::{Capability, CapabilityType, ParseError},
     report::Report,
 };
 

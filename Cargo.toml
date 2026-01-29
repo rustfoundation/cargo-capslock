@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["capslock", "capslock-cm", "capslock-rust"]
+members = ["capslock", "capslock-cm", "capslock-rust", "cm"]
 exclude = ["llvm-ir-analysis"]
 
 [workspace.package]
@@ -16,7 +16,9 @@ capslock = { version = "0.1.0", path = "capslock" }
 capslock-cm = { version = "0.1.0", path = "capslock-cm" }
 capslock-rust = { version = "0.1.0", path = "capslock-rust" }
 clap = "4.5.53"
+cm = { version = "0.1.0", path = "cm" }
 escargot = "0.5.15"
+indexmap = "2.13.0"
 insta = "1.44.1"
 itertools = "0.14.0"
 llvm-ir-analysis = { path = "llvm-ir-analysis" }
@@ -52,8 +54,8 @@ clap = { workspace = true, features = ["derive"] }
 escargot = { workspace = true }
 itertools = { workspace = true }
 llvm-ir-analysis = { workspace = true, features = [
-    "llvm-19",
-    "strict-versioning",
+  "llvm-19",
+  "strict-versioning",
 ] }
 nix = { workspace = true, features = ["fs", "signal"] }
 petgraph = { workspace = true }

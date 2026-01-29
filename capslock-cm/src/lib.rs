@@ -1,14 +1,13 @@
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashSet},
+    convert::Infallible,
     env::VarError,
     fs::File,
-    io::{BufRead, BufReader},
+    io::BufReader,
     path::PathBuf,
-    str::FromStr,
 };
 
 use capslock::Capability;
-use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{
@@ -46,43 +45,13 @@ impl Func {
             span: self.path_span,
         })?);
 
-        for (line, result) in input.lines().enumerate() {
-            let content = result.map_err(|e| Error::ReadInput {
+        for (name, local) in cm::Document::<String, Capability>::from_reader(input)
+            .map_err(|e| Error::Cm {
                 e,
-                path: self.path.clone(),
                 span: self.path_span,
-            })?;
-
-            if content.trim_start().starts_with('#') || content.trim().is_empty() {
-                continue;
-            }
-
-            let mut fields = content
-                .trim()
-                .split_ascii_whitespace()
-                .collect::<VecDeque<_>>();
-            if fields.len() < 2 {
-                return Err(Error::InsufficientFields {
-                    line: line + 1,
-                    path: self.path,
-                    span: self.path_span,
-                }
-                .into());
-            }
-
-            let name = fields.pop_front().unwrap();
-            let local: Vec<_> = fields
-                .into_iter()
-                .map(|cap| {
-                    Capability::from_str(cap).map_err(|_| Error::MalformedCapabilityName {
-                        cap: cap.to_string(),
-                        line: line + 1,
-                        path: self.path.clone(),
-                        span: self.path_span,
-                    })
-                })
-                .try_collect()?;
-
+            })?
+            .into_iter()
+        {
             caps.insert(name, local.into_iter());
         }
 
@@ -137,18 +106,10 @@ pub fn parse(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 #[derive(Error, Debug)]
 enum Error {
-    #[error("not enough fields on line {line} in {path:?}")]
-    InsufficientFields {
-        line: usize,
-        path: PathBuf,
-        span: Span,
-    },
-
-    #[error("malformed capability name on line {line} in {path:?}: {cap}")]
-    MalformedCapabilityName {
-        cap: String,
-        line: usize,
-        path: PathBuf,
+    #[error("cm parsing error: {e}")]
+    Cm {
+        #[source]
+        e: cm::Error<Infallible, capslock::ParseError>,
         span: Span,
     },
 
@@ -166,24 +127,14 @@ enum Error {
         path: PathBuf,
         span: Span,
     },
-
-    #[error("reading capslock input from {path:?}: {e}")]
-    ReadInput {
-        #[source]
-        e: std::io::Error,
-        path: PathBuf,
-        span: Span,
-    },
 }
 
 impl Error {
     fn span(&self) -> Span {
         match self {
-            Error::InsufficientFields { span, .. } => *span,
-            Error::MalformedCapabilityName { span, .. } => *span,
+            Error::Cm { span, .. } => *span,
             Error::ManifestPath { span, .. } => *span,
             Error::OpenInput { span, .. } => *span,
-            Error::ReadInput { span, .. } => *span,
         }
     }
 }

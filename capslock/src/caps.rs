@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+pub use strum::ParseError;
 use strum::{EnumString, IntoStaticStr, VariantNames};
 
 #[derive(
