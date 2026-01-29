@@ -3,6 +3,7 @@ use std::{
     ffi::OsString,
     ops::RangeInclusive,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use capslock::{Capability, report};
@@ -12,7 +13,7 @@ use ptrace_iterator::core::Fd;
 use crate::{
     function::FunctionMap,
     graph::CallGraph,
-    runtime::{error::Error, fd},
+    runtime::{StartBehaviour, error::Error, fd},
 };
 
 #[derive(Debug)]
@@ -20,7 +21,7 @@ pub struct Map {
     active: BTreeMap<Pid, State>,
     inactive: Vec<(Pid, State)>,
 
-    include_before_start: bool,
+    start_behaviour: Arc<StartBehaviour>,
     init_pid: Pid,
 }
 
@@ -29,8 +30,10 @@ impl Map {
         init_pid: Pid,
         init_exec: Exec,
         init_wd: impl Into<PathBuf>,
-        include_before_start: bool,
+        start_behaviour: StartBehaviour,
     ) -> Self {
+        let start_behaviour = Arc::new(start_behaviour);
+
         Self {
             active: [(
                 init_pid,
@@ -38,7 +41,8 @@ impl Map {
                     execs: [init_exec].into_iter().collect(),
                     fds: Default::default(),
                     pid: init_pid,
-                    waiting_for_start: !include_before_start,
+                    waiting_for_start: start_behaviour.waiting_for_start_default(),
+                    start_behaviour: start_behaviour.clone(),
                     wd: init_wd.into(),
                     call_graph: Default::default(),
                     caps: Default::default(),
@@ -48,7 +52,7 @@ impl Map {
             .into_iter()
             .collect(),
             inactive: Vec::new(),
-            include_before_start,
+            start_behaviour,
             init_pid,
         }
     }
@@ -85,7 +89,8 @@ impl Map {
                     .map(|(fd, meta)| (*fd, meta.clone()))
                     .collect(),
                 pid: child,
-                waiting_for_start: !self.include_before_start,
+                waiting_for_start: self.start_behaviour.waiting_for_start_default(),
+                start_behaviour: self.start_behaviour.clone(),
                 wd: parent.wd.clone(),
                 call_graph: Default::default(),
                 caps: Default::default(),
@@ -135,6 +140,7 @@ pub struct State {
     execs: VecDeque<Exec>,
     fds: BTreeMap<Fd, fd::Meta>,
     pid: Pid,
+    start_behaviour: Arc<StartBehaviour>,
     waiting_for_start: bool,
     wd: PathBuf,
 
@@ -166,6 +172,13 @@ impl State {
 
     pub fn get_fd(&self, fd: Fd) -> Option<&fd::Meta> {
         self.fds.get(&fd)
+    }
+
+    pub fn get_start_symbol(&self) -> Option<&str> {
+        match &*self.start_behaviour {
+            StartBehaviour::IncludeAll => None,
+            StartBehaviour::OnlyAfter(after) => Some(after.as_str()),
+        }
     }
 
     pub fn infer_fd(&mut self, fd: Fd) -> Result<&fd::Meta, Error> {

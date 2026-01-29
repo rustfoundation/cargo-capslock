@@ -54,6 +54,13 @@ pub struct Runtime {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
+    /// The symbol to consider the start of the actual code being analysed.
+    ///
+    /// The default `gettid` works well with the normal Rust runtime on Linux,
+    /// but you may want to use `_start` for no-std or non-Rust programs.
+    #[arg(long, default_value = "gettid")]
+    start_symbol: String,
+
     /// The command and any arguments to analyse.
     #[arg(num_args=1..)]
     argv: Vec<OsString>,
@@ -79,7 +86,11 @@ impl Runtime {
             child_pid,
             process::Exec::new(path, argv.into_iter(), std::iter::empty::<OsString>()),
             std::env::current_dir().map_err(Error::Cwd)?,
-            self.include_before_start,
+            if self.include_before_start {
+                StartBehaviour::IncludeAll
+            } else {
+                StartBehaviour::OnlyAfter(self.start_symbol)
+            },
             self.include_syscalls,
             self.lookup_locations,
         );
@@ -140,17 +151,29 @@ struct GlobalState {
     location_lookup: Lookup,
 }
 
+#[derive(Debug)]
+enum StartBehaviour {
+    IncludeAll,
+    OnlyAfter(String),
+}
+
+impl StartBehaviour {
+    fn waiting_for_start_default(&self) -> bool {
+        matches!(self, &Self::OnlyAfter(_))
+    }
+}
+
 impl GlobalState {
     fn new(
         pid: Pid,
         exec: process::Exec,
         wd: PathBuf,
-        include_before_start: bool,
+        start_behaviour: StartBehaviour,
         include_syscalls: bool,
         lookup_locations: bool,
     ) -> Self {
         Self {
-            processes: process::Map::new(pid, exec, wd, include_before_start),
+            processes: process::Map::new(pid, exec, wd, start_behaviour),
             address_spaces: HashMap::new(),
             include_syscalls,
             location_lookup: if lookup_locations {
@@ -207,7 +230,9 @@ impl GlobalState {
         // Even if we can't get a stack trace, let's minimally update the overall set of
         // capabilities.
         let syscall_caps = meta.into_capabilities(process_state, event.sval())?;
-        process_state.extend_caps(syscall_caps.iter().copied());
+        if !process_state.is_waiting_for_start() {
+            process_state.extend_caps(syscall_caps.iter().copied());
+        }
 
         // Configure libunwind to use ptrace to access the child's memory space.
         let state = PTraceState::new(pid.as_raw() as u32)?;
@@ -227,8 +252,13 @@ impl GlobalState {
                 && let Ok(info) = cursor.procedure_info()
                 && ip == info.start_ip() + name.offset()
             {
-                if name.name() == "_start" {
+                if let Some(after) = process_state.get_start_symbol()
+                    && name.name() == after
+                {
                     process_state.start_seen();
+
+                    // We still want to ignore this one, though.
+                    return Ok(());
                 }
 
                 names.push(name);
