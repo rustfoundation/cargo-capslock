@@ -14,10 +14,7 @@ use itertools::Itertools;
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use crate::{
-    caps::FunctionCaps,
-    r#static::{bitcode::Bitcode, cargo::ExecutableSet},
-};
+use crate::{caps::FunctionCaps, r#static::cargo::ExecutableSet};
 
 mod bitcode;
 mod cargo;
@@ -65,9 +62,10 @@ impl Static {
         let target = TempDir::new()?;
 
         // Build the package.
-        let exes = self.build(target.path())?;
+        let _exes = self.build(target.path())?;
 
         // Process the generated bitcode files.
+        let mut builder = bitcode::Builder::new(PathBuf::new(), &function_caps);
         for path_result in WalkDir::new(
             target
                 .path()
@@ -77,26 +75,21 @@ impl Static {
         .into_iter()
         .filter_map_ok(|entry| {
             if entry.file_type().is_file()
-                && let Some(file_name) = entry.path().file_name()
                 && entry
                     .path()
                     .extension()
                     .is_some_and(|ext| ext.as_bytes() == b"bc")
-                && exes.contains_prefix_match(file_name)
             {
                 Some(entry.into_path())
             } else {
                 None
             }
         }) {
-            let bitcode = Bitcode::from_bc_path(path_result?, &function_caps)?;
-
-            // FIXME: just outputting the JSON blobs one after another isn't particularly useful. We
-            // should only do this if there's only one executable, otherwise we should require
-            // outputting to a directory.
-            serde_json::to_writer_pretty(std::io::stdout(), &bitcode.into_report())?;
-            println!();
+            builder.add_module(path_result?)?;
         }
+
+        serde_json::to_writer_pretty(std::io::stdout(), &builder.into_report())?;
+        println!();
 
         Ok(())
     }
