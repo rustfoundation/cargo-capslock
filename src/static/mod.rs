@@ -6,18 +6,14 @@ use std::{
 };
 
 use clap::Parser;
-use escargot::{
-    CargoBuild, CommandMessages,
-    format::{Artifact, Message},
-};
+use escargot::{CargoBuild, CommandMessages};
 use itertools::Itertools;
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use crate::{caps::FunctionCaps, r#static::cargo::ExecutableSet};
+use crate::caps::FunctionCaps;
 
 mod bitcode;
-mod cargo;
 
 #[derive(Parser, Debug)]
 pub struct Static {
@@ -62,7 +58,7 @@ impl Static {
         let target = TempDir::new()?;
 
         // Build the package.
-        let _exes = self.build(target.path())?;
+        self.build(target.path())?;
 
         // Process the generated bitcode files.
         let mut builder = bitcode::Builder::new(PathBuf::new(), &function_caps);
@@ -95,7 +91,7 @@ impl Static {
     }
 
     #[tracing::instrument(skip_all, err)]
-    fn build(&self, target: &Path) -> anyhow::Result<ExecutableSet> {
+    fn build(&self, target: &Path) -> anyhow::Result<()> {
         let mut cargo = CargoBuild::new()
             // This is the key: we need to emit an LLVM bitcode file.
             //
@@ -140,21 +136,12 @@ impl Static {
         let mut cmd = cargo.into_command();
         cmd.current_dir(path.as_path());
 
-        // We have to iterate the messages for Cargo to progress, but we also want the executables
-        // so we don't look at bincode files we're not interested in.
-        //
-        // FIXME: extend to detect and handle shared libraries.
-        let mut exes = ExecutableSet::default();
+        // We have to iterate the messages for Cargo to progress.
         for msg_result in CommandMessages::with_command(cmd)? {
-            if let Message::CompilerArtifact(Artifact {
-                executable: Some(exe),
-                ..
-            }) = msg_result?.decode()?
-            {
-                exes.insert(exe)?;
-            }
+            let msg = msg_result?;
+            tracing::trace!(?msg, "cargo message");
         }
 
-        Ok(exes)
+        Ok(())
     }
 }
