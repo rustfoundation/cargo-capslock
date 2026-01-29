@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::{
     caps::FunctionCaps,
     function::{FunctionMap, ToFunction},
+    graph::CallGraph,
     location::IntoOptionLocation,
     r#static::bitcode::Bitcode,
 };
@@ -29,14 +30,14 @@ pub fn from_bc_path(
             path: path.clone(),
         })?;
 
-    let mut map = FunctionMap::default();
+    let mut functions = FunctionMap::default();
     for function in module.get_functions() {
-        map.upsert_with_caps(function_caps, function)?;
+        functions.upsert_with_caps(function_caps, function)?;
     }
 
-    let mut graph = DiGraphMap::with_capacity(map.len(), 0);
+    let mut graph = DiGraphMap::with_capacity(functions.len(), 0);
     for function in module.get_functions() {
-        let caller = map.get_index(function.mangled_name()).unwrap();
+        let caller = functions.get_index(function.mangled_name()).unwrap();
 
         for block in function.get_basic_block_iter() {
             for instr in block.get_instructions() {
@@ -56,7 +57,7 @@ pub fn from_bc_path(
                         if !con.is_null() {
                             let callee_value = unsafe { GlobalValue::new(con) };
                             let callee_name = callee_value.get_name().to_str().unwrap();
-                            let callee = map.get_index(callee_name).unwrap();
+                            let callee = functions.get_index(callee_name).unwrap();
 
                             let loc = instr.into_option_location();
 
@@ -69,10 +70,13 @@ pub fn from_bc_path(
         }
     }
 
+    let call_graph = CallGraph::from(graph);
+    call_graph.bubble_transitive_capabilities(&mut functions);
+
     Ok(Bitcode {
         path,
-        functions: map,
-        call_graph: graph.into(),
+        functions,
+        call_graph,
     })
 }
 
