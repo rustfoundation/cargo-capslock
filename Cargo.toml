@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["capslock", "capslock-cm", "capslock-rust", "cm"]
+members = ["capslock", "capslock-cm", "capslock-rust", "capslock-seccomp", "cm"]
 exclude = ["llvm-ir-analysis"]
 
 [workspace.package]

@@ -244,10 +244,10 @@ dependencies = [
 name = "capslock-seccomp"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap 4.5.53",
  "serde",
  "serde_json",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
