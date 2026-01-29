@@ -18,8 +18,8 @@ use symbolic::common::Name;
 use unwind::{Accessors, AddressSpace, Byteorder, Cursor, PTraceState, PTraceStateRef, RegNum};
 
 use crate::{
-    dynamic::{error::Error, location::Lookup, signal::SignalForwarder, syscall::Meta},
     function::ToFunction,
+    runtime::{error::Error, location::Lookup, signal::SignalForwarder, syscall::Meta},
 };
 
 mod error;
@@ -30,7 +30,7 @@ mod signal;
 mod syscall;
 
 #[derive(Parser, Debug)]
-pub struct Dynamic {
+pub struct Runtime {
     /// If enabled, an additional section will be added to the JSON output providing information for
     /// child processes.
     #[arg(short = 'c', long)]
@@ -59,7 +59,7 @@ pub struct Dynamic {
     argv: Vec<OsString>,
 }
 
-impl Dynamic {
+impl Runtime {
     #[tracing::instrument(err)]
     pub fn main(self) -> Result<(), Error> {
         // Wrangle argv and extract the command path.

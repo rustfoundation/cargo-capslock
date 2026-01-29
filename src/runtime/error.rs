@@ -8,7 +8,7 @@ use nix::{errno::Errno, unistd::Pid};
 use ptrace_iterator::{Sysno, core::Fd};
 use thiserror::Error;
 
-use crate::dynamic::fd;
+use crate::runtime::fd;
 
 #[derive(Debug, Error)]
 pub enum Error {

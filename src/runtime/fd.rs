@@ -14,7 +14,7 @@ use nix::{
 };
 use ptrace_iterator::core::Fd;
 
-use crate::dynamic::error::Error;
+use crate::runtime::error::Error;
 
 #[derive(Debug, Clone)]
 pub struct Meta {

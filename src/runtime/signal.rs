@@ -7,7 +7,7 @@ use signal_hook::{
     iterator::{Handle, Signals},
 };
 
-use crate::dynamic::error::Error;
+use crate::runtime::error::Error;
 
 pub struct SignalForwarder {
     handle: Handle,

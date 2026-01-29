@@ -5,10 +5,10 @@ use tracing_subscriber::{
 };
 
 mod caps;
-mod dynamic;
 mod function;
 mod graph;
 mod location;
+mod runtime;
 mod r#static;
 mod syscall;
 
@@ -29,7 +29,7 @@ impl Opt {
 
         match self.command {
             Command::Static(cmd) => cmd.main(),
-            Command::Dynamic(cmd) => Ok(cmd.main()?),
+            Command::Runtime(cmd) => Ok(cmd.main()?),
         }
     }
 }
@@ -43,5 +43,5 @@ pub enum Command {
     ///
     /// If the process isn't built in Rust, or lacks debuginfo, this probably won't be as effective
     /// as you might hope.
-    Dynamic(dynamic::Dynamic),
+    Runtime(runtime::Runtime),
 }

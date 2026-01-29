@@ -10,9 +10,9 @@ use nix::unistd::Pid;
 use ptrace_iterator::core::Fd;
 
 use crate::{
-    dynamic::{error::Error, fd},
     function::FunctionMap,
     graph::CallGraph,
+    runtime::{error::Error, fd},
 };
 
 #[derive(Debug)]

@@ -17,7 +17,7 @@ use ptrace_iterator::{
 };
 
 use crate::{
-    dynamic::{error::Error, fd, process},
+    runtime::{error::Error, fd, process},
     syscall::lookup,
 };
 

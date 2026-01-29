@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, ffi::c_ulong};
 use capslock::Capability;
 use nix::sys::socket::AddressFamily;
 
-use crate::dynamic::{error::Error, fd};
+use crate::runtime::{error::Error, fd};
 
 pub fn caps(cmd: c_ulong, ty: &fd::Type) -> Result<BTreeSet<Capability>, Error> {
     tracing::info!(?cmd, ?ty, "ioctl caps");
