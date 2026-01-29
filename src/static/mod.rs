@@ -105,7 +105,20 @@ impl Static {
     fn build(&self, target: &Path) -> anyhow::Result<ExecutableSet> {
         let mut cargo = CargoBuild::new()
             // This is the key: we need to emit an LLVM bitcode file.
-            .env("RUSTFLAGS", "--emit=llvm-bc")
+            //
+            // We're also going to disable inlining as much as possible to get
+            // the most representative call graph, which involves some secret
+            // switches.
+            //
+            // FIXME: some of these flags have changed over time; we should
+            // detect the toolchain version and convert, say, the
+            // inline-threshold flag into -Cinline-threshold on older rustc
+            // versions.
+            .env(
+                "RUSTFLAGS",
+                "--emit=llvm-bc -Cno-prepopulate-passes -Cllvm-args=--inline-threshold=999999999 -Zinline-mir=no",
+            )
+            .env("RUSTC_BOOTSTRAP", "1")
             // Control the Rust version (which indirectly controls the LLVM version, which is really
             // what we care about).
             .env("RUSTUP_TOOLCHAIN", &self.rust_toolchain)
