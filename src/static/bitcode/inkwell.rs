@@ -23,6 +23,7 @@ pub fn from_bc_path(
 ) -> Result<Bitcode, Error> {
     let path = path.into();
 
+    // Parse the LLVM bitcode.
     let context = Context::create();
     let module =
         Module::parse_bitcode_from_path(&path, &context).map_err(|e| Error::BitcodeParse {
@@ -30,11 +31,19 @@ pub fn from_bc_path(
             path: path.clone(),
         })?;
 
+    // We have to do two passes here. First up, we need to get the functions
+    // defined in the LLVM module.
+    //
+    // TODO: We can likely build a function context (in llvm-ir terms) that will
+    // allow us to resolve local value pointers below.
     let mut functions = FunctionMap::default();
     for function in module.get_functions() {
         functions.upsert_with_caps(function_caps, function)?;
     }
 
+    // On the second pass, we walk the basic blocks within the functions, and
+    // then their instructions, to find the places where one function calls
+    // another.
     let mut graph = DiGraphMap::with_capacity(functions.len(), 0);
     for function in module.get_functions() {
         let caller = functions.get_index(function.mangled_name()).unwrap();
