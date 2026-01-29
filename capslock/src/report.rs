@@ -179,9 +179,17 @@ impl Serialize for Process {
             syscalls: BTreeSet<&'a str>,
         }
 
+        // Always remove safe from the top level capability list.
+        let capabilities = self
+            .capabilities
+            .iter()
+            .copied()
+            .filter(|cap| cap != &Capability::Safe)
+            .collect::<BTreeSet<_>>();
+
         Raw {
             path: &self.path,
-            capabilities: process_cap_set(&self.capabilities),
+            capabilities,
             functions: &self.functions,
             edges: &self.edges,
             syscalls: collect_syscalls(&self.functions),
@@ -197,11 +205,4 @@ fn collect_syscalls(functions: &[Function]) -> BTreeSet<&str> {
             syscalls.extend(func.syscalls.iter().map(|syscall| syscall.as_str()));
             syscalls
         })
-}
-
-fn process_cap_set(caps: &BTreeSet<Capability>) -> BTreeSet<Capability> {
-    caps.iter()
-        .copied()
-        .filter(|cap| caps.len() < 2 || *cap != Capability::Safe)
-        .collect()
 }
