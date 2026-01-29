@@ -2,9 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use capslock::{
     Capability, CapabilityType,
-    report::{self, FunctionName, RustFunctionName},
+    report::{self, FunctionName, Location, RustFunctionName},
 };
-use llvm_ir_analysis::llvm_ir::{self, DebugLoc};
 use symbolic::{
     common::{Language, Name, NameMangling},
     demangle::{Demangle, DemangleOptions},
@@ -31,6 +30,10 @@ impl FunctionMap {
 
     pub fn get_mut(&mut self, idx: usize) -> Option<&mut report::Function> {
         self.functions.get_mut(idx)
+    }
+
+    pub fn len(&self) -> usize {
+        self.functions.len()
     }
 
     pub fn into_functions(self) -> Vec<report::Function> {
@@ -132,13 +135,13 @@ pub enum Error {
 }
 
 pub trait ToFunction {
-    fn debugloc(&self) -> Option<&DebugLoc>;
+    fn location(&self) -> Option<Location>;
     fn mangled_name(&self) -> &str;
 
     fn to_function(&self) -> Result<report::Function, Error> {
         Ok(report::Function {
             name: parse_mangled_name(self.mangled_name())?,
-            location: self.debugloc().into_option_location(),
+            location: self.location(),
             capabilities: BTreeMap::new(),
             syscalls: BTreeSet::new(),
         })
@@ -150,7 +153,7 @@ pub trait ToFunction {
     ) -> Result<report::Function, Error> {
         Ok(report::Function {
             name: parse_mangled_name(self.mangled_name())?,
-            location: self.debugloc().into_option_location(),
+            location: self.location(),
             capabilities: caps.collect(),
             syscalls: BTreeSet::new(),
         })
@@ -165,16 +168,29 @@ pub trait ToFunction {
 
         Ok(report::Function {
             name,
-            location: self.debugloc().into_option_location(),
+            location: self.location(),
             capabilities,
             syscalls: BTreeSet::new(),
         })
     }
 }
 
-impl ToFunction for &llvm_ir::Function {
-    fn debugloc(&self) -> Option<&DebugLoc> {
-        self.debugloc.as_ref()
+#[cfg(feature = "inkwell")]
+impl<'a> ToFunction for inkwell::values::FunctionValue<'a> {
+    fn location(&self) -> Option<Location> {
+        self.into_option_location()
+    }
+
+    fn mangled_name(&self) -> &str {
+        // FIXME: modify ToFunction to allow an error here.
+        self.get_name().to_str().unwrap()
+    }
+}
+
+#[cfg(feature = "llvm-ir-analysis")]
+impl ToFunction for &llvm_ir_analysis::llvm_ir::Function {
+    fn location(&self) -> Option<Location> {
+        self.debugloc.into_option_location()
     }
 
     fn mangled_name(&self) -> &str {
@@ -182,9 +198,10 @@ impl ToFunction for &llvm_ir::Function {
     }
 }
 
-impl ToFunction for &llvm_ir::function::FunctionDeclaration {
-    fn debugloc(&self) -> Option<&DebugLoc> {
-        self.debugloc.as_ref()
+#[cfg(feature = "llvm-ir-analysis")]
+impl ToFunction for &llvm_ir_analysis::llvm_ir::function::FunctionDeclaration {
+    fn location(&self) -> Option<Location> {
+        self.debugloc.into_option_location()
     }
 
     fn mangled_name(&self) -> &str {
@@ -193,7 +210,7 @@ impl ToFunction for &llvm_ir::function::FunctionDeclaration {
 }
 
 impl<'a> ToFunction for Name<'a> {
-    fn debugloc(&self) -> Option<&DebugLoc> {
+    fn location(&self) -> Option<Location> {
         None
     }
 

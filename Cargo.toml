@@ -17,6 +17,7 @@ capslock-cm = { version = "0.1.0", path = "capslock-cm" }
 capslock-rust = { version = "0.1.0", path = "capslock-rust" }
 clap = "4.5.53"
 escargot = "0.5.15"
+inkwell = { version = "0.8.0", default-features = false }
 insta = "1.44.1"
 itertools = "0.14.0"
 llvm-ir-analysis = { path = "llvm-ir-analysis" }
@@ -51,11 +52,15 @@ capslock-cm = { workspace = true }
 capslock-rust = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 escargot = { workspace = true }
+inkwell = { workspace = true, features = [
+  "llvm21-1",
+  "target-x86",
+], optional = true }
 itertools = { workspace = true }
 llvm-ir-analysis = { workspace = true, features = [
-    "llvm-19",
-    "strict-versioning",
-] }
+  "llvm-19",
+  "strict-versioning",
+], optional = true }
 nix = { workspace = true, features = ["fs", "signal"] }
 ouroboros = { workspace = true }
 petgraph = { workspace = true }
@@ -73,3 +78,8 @@ walkdir = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true, features = ["serde", "yaml"] }
+
+[features]
+default = ["inkwell"]
+inkwell = ["dep:inkwell"]
+llvm-ir-analysis = ["dep:llvm-ir-analysis"]

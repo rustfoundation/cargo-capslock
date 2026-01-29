@@ -97,7 +97,7 @@ mod tests {
     struct TestFunction(&'static str);
 
     impl ToFunction for TestFunction {
-        fn debugloc(&self) -> Option<&llvm_ir_analysis::llvm_ir::DebugLoc> {
+        fn location(&self) -> Option<Location> {
             None
         }
 
