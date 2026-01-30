@@ -24,7 +24,7 @@ pub enum Action {
     KillProcess,
     Trap,
     Errno(i32),
-    Trace(u32),
+    Trace(#[allow(dead_code)] u32),
 }
 
 impl Action {
@@ -36,6 +36,7 @@ impl Action {
         }
     }
 
+    #[allow(dead_code)]
     fn trace(&self) -> Option<u32> {
         if let Self::Trace(trace) = self {
             Some(*trace)
