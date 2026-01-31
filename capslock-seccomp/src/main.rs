@@ -56,6 +56,34 @@ fn main() -> Result<(), Error> {
         cap_map.get_syscalls(capabilities.into_iter()),
     );
 
+    // There are also a handful of syscalls required by runc itself that we must
+    // allow, but we'll log in case they're not previously allowed.
+    policy.add_syscalls(
+        Action::Log,
+        [
+            "capget",
+            "capset",
+            "chdir",
+            "close",
+            "epoll_pwait",
+            "execve",
+            "fchown",
+            "fstat",
+            "futex",
+            "getdents64",
+            "getppid",
+            "newfstatat",
+            "openat",
+            "prctl",
+            "read",
+            "setgid",
+            "setgroups",
+            "setuid",
+            "write",
+        ]
+        .into_iter(),
+    );
+
     // Output the policy.
     serde_json::to_writer_pretty(std::io::stdout(), &policy).map_err(Error::OutputWrite)?;
 
