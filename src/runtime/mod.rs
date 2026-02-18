@@ -230,9 +230,6 @@ impl GlobalState {
         // Even if we can't get a stack trace, let's minimally update the overall set of
         // capabilities.
         let syscall_caps = meta.into_capabilities(process_state, event.sval())?;
-        if !process_state.is_waiting_for_start() {
-            process_state.extend_caps(syscall_caps.iter().copied());
-        }
 
         // Configure libunwind to use ptrace to access the child's memory space.
         let state = PTraceState::new(pid.as_raw() as u32)?;
@@ -287,12 +284,15 @@ impl GlobalState {
                 let name = Name::from(name.name());
                 match name.to_function_with_caps(syscall_caps.iter().map(|cap| (*cap, ty))) {
                     Ok(mut func) => {
-                        // Add syscall if this is a direct syscall.
-                        if self.include_syscalls
-                            && ty == CapabilityType::Direct
-                            && let Some(syscall) = event.syscall()
-                        {
-                            func.insert_syscall(syscall.nr());
+                        if ty == CapabilityType::Direct {
+                            process_state.extend_caps(syscall_caps.iter().copied());
+
+                            // Add syscall if this is a direct syscall.
+                            if self.include_syscalls
+                                && let Some(syscall) = event.syscall()
+                            {
+                                func.insert_syscall(syscall.nr());
+                            }
                         }
 
                         // Do the location lookup, bearing in mind that it might be a no-op if this
