@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["capslock", "capslock-cm", "capslock-rust", "capslock-seccomp", "cm"]
+members = [
+  "capslock",
+  "capslock-cm",
+  "capslock-rust",
+  "capslock-seccomp",
+  "cm",
+  "osv-cache",
+]
 exclude = ["llvm-ir-analysis"]
 
 [workspace.package]
@@ -15,18 +22,24 @@ anyhow = "1.0.100"
 capslock = { version = "0.1.0", path = "capslock" }
 capslock-cm = { version = "0.1.0", path = "capslock-cm" }
 capslock-rust = { version = "0.1.0", path = "capslock-rust" }
+chrono = "0.4.43"
 clap = "4.5.53"
 cm = { version = "0.1.0", path = "cm" }
+csv = "1.4.0"
 escargot = "0.5.15"
 indexmap = "2.13.0"
+indicatif = "0.18.4"
 insta = "1.44.1"
 itertools = "0.14.0"
 llvm-ir-analysis = { path = "llvm-ir-analysis" }
 nix = "0.30.1"
+osv = "0.2.2"
+osv-cache = { version = "0.1.0", path = "osv-cache" }
 petgraph = "0.8.3"
 proc-macro2 = "1.0.103"
 ptrace-iterator = { version = "0.1.0", git = "https://github.com/LawnGnome/ptrace-iterator.git", rev = "fbed919" }
 quote = "1.0.42"
+reqwest = "0.13.2"
 serde = "1.0.228"
 serde_json = "1.0.145"
 signal-hook = "0.3.18"
@@ -39,6 +52,8 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
 unwind = "0.4.2"
 walkdir = "2.5.0"
+xdg = "3.0.0"
+zip = "8.1.0"
 
 [package]
 name = "cargo-capslock"
