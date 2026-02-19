@@ -12,7 +12,7 @@ use crate::{Capability, caps::CapabilityType};
 pub struct Report {
     #[serde(flatten)]
     pub process: Process,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Process>,
 }
 

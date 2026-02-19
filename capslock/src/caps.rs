@@ -116,9 +116,9 @@ impl<'de> Deserialize<'de> for CapabilityType {
     where
         D: serde::Deserializer<'de>,
     {
-        let variant = <&str>::deserialize(deserializer)?;
-        Self::from_str(variant)
-            .map_err(|_| serde::de::Error::unknown_variant(variant, Self::VARIANTS))
+        let variant = String::deserialize(deserializer)?;
+        Self::from_str(&variant)
+            .map_err(|_| serde::de::Error::unknown_variant(&variant, Self::VARIANTS))
     }
 }
 
